@@ -10,7 +10,8 @@
 services:
   server:
     build:
-      context: ./backend
+      context: .
+      dockerfile: ./backend/Dockerfile
     ports:
       - "8000:8000"
     env_file:

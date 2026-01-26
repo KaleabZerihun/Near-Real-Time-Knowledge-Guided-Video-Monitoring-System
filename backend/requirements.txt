@@ -1,2 +1,8 @@
 fastapi
 uvicorn
+pydantic
+pytest
+pytest-cov
+python-dotenv
+numpy
+opencv-python
