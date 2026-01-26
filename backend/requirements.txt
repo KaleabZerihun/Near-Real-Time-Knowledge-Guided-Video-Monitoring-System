@@ -1,2 +1,22 @@
 fastapi
 uvicorn
+pydantic
+pytest
+pytest-cov
+python-dotenv
+numpy
+opencv-python
+<<<<<<< HEAD
+<<<<<<< HEAD
+tqdm
+pyyaml
+pillow
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch
+torchvision
+torchaudio
+git+https://github.com/facebookresearch/ImageBind.git
+=======
+>>>>>>> 571db42223930bb261bef81d5f2013cb6fd43ee3
+=======
+>>>>>>> 571db42223930bb261bef81d5f2013cb6fd43ee3
