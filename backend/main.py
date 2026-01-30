@@ -28,14 +28,14 @@ def startup() -> None:
     thesis_root = os.path.join(repo_root, "THESIS")
 
     cfg = FrameSelectorConfig(
-        source=0,
-        source_id="webcam0",
-        target_fps=8.0,
-        resize_hw=(224, 224),
-        clip_len=16,
-        stride=8,
-        frame_ring_maxlen=256,
-        max_batches=8,
+        source=0, #which webcam
+        source_id="webcam0", 
+        target_fps=8.0, #how many fps
+        resize_hw=(224, 224), #resize frames for vad model input
+        clip_len=16, # how batches are formed
+        stride=8, 
+        frame_ring_maxlen=256, # buffer size
+        max_batches=8, #queue size
     )
 
     runner = PipelineRunner(cfg=cfg, thesis_root=thesis_root)
@@ -48,6 +48,7 @@ def shutdown() -> None:
     if runner:
         runner.stop()
         runner = None
+    os._exit(0)
 
 
 @app.get("/", response_class=HTMLResponse)

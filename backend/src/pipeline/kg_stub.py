@@ -5,7 +5,7 @@ from typing import Optional, List
 
 from src.vad.flashback_vad import VADOutput
 
-
+#can add augmentor logic here
 @dataclass(frozen=True)
 class KGOutput:
     vad: VADOutput

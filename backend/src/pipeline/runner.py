@@ -14,6 +14,7 @@ from src.pipeline.kg_stub import DummyAugmentor
 
 class PipelineRunner:
     def __init__(self, cfg: FrameSelectorConfig, thesis_root: str):
+        #create the frame selector, VAD and KG object
         self.selector = FrameSelector(cfg)
         self.vad = FlashbackVAD(thesis_root=thesis_root)
         self.kg = DummyAugmentor()
@@ -25,7 +26,7 @@ class PipelineRunner:
         self._latest_payload: Optional[Dict[str, Any]] = None
         self._latest_frame_bgr = None
         self._event_id = 0
-
+    # run the frame selecor
     def start(self) -> None:
         self.selector.start()
         self._stop.clear()
@@ -67,7 +68,7 @@ class PipelineRunner:
             cv2.putText(out, f"Caption: {vad_out.top_caption[:70]}", (10, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (30, 30, 30), 2)
 
         return out
-
+#runs the VAD in a loop
     def _loop(self) -> None:
         last_vad: VADOutput | None = None
 
@@ -75,7 +76,6 @@ class PipelineRunner:
             batch = self.selector.get_batch(timeout=0.5)
             if batch is None:
                 # Even before first batch: show a “waiting” frame (latest ring frame if exists)
-                # We do NOT modify Darik’s code—just peek at his internal ring buffer.
                 try:
                     ring_list = self.selector._ring.snapshot()  # type: ignore
                     if ring_list:
@@ -91,7 +91,7 @@ class PipelineRunner:
             # ---- Sponsor VAD runs here ----
             vad_out: VADOutput = self.vad.predict(batch)
             last_vad = vad_out
-
+#####################################################################################
             # KG stub (Sprint 1)
             kg_out = self.kg.augment(vad_out)
 
@@ -112,7 +112,7 @@ class PipelineRunner:
                 "rules_fired": kg_out.rules_fired,
             }
 
-            # Use a frame from the batch for the video stream
+            # Use a frame from the batch for the video stream, to get vadz
             mid = len(batch.frames) // 2
             frame = batch.frames[mid].frame_bgr
 
