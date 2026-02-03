@@ -109,6 +109,14 @@ def dashboard():
       .muted { color: #666; font-size: 13px; }
       .warn { background: #fff3cd; border: 1px solid #ffeeba; padding: 10px; border-radius: 10px; margin-top: 10px; }
       code { background: #f6f6f6; padding: 1px 4px; border-radius: 6px; }
+
+      #toasts { position: fixed; right: 18px; top: 18px; display: flex; flex-direction: column; gap: 8px; z-index: 9999; pointer-events: none; }
+      .toast { min-width: 260px; max-width: 360px; pointer-events: auto; background: #fff; color: #111; padding: 10px 12px; border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,0.18); transform: translateY(-8px) scale(0.98); opacity: 0; transition: all 0.25s ease; font-size: 14px; }
+      .toast.visible { transform: translateY(0) scale(1); opacity: 1; }
+      .toast.info { border-left: 4px solid grey; }
+      .toast.warning { border-left: 4px solid orange; }
+      .toast.critical { border-left: 4px solid red; }
+      .toast.meta { font-size: 11px; color: dark grey; margin-top: 6px; }
     </style>
   </head>
   <body>
@@ -157,12 +165,35 @@ def dashboard():
           img.style.display = "block";
           img.src = "/video/mjpeg";
 
-          const es = new EventSource("/pipeline/stream");
+    
+      const toastContainer = document.createElement('div');
+      toastContainer.id = 'toasts';
+      document.body.appendChild(toastContainer);
+
+      function showToast(alert) {
+        const el = document.createElement('div');
+
+        el.className = 'toast ' + (alert.severity || 'info');
+        el.innerHTML = `<strong>${alert.source.toUpperCase()}</strong>: ${alert.message}<div class="meta">${new Date(alert.ts * 1000).toLocaleTimeString()}</div>`;
+        toastContainer.appendChild(el);
+
+        requestAnimationFrame(() => el.classList.add('visible'));
+
+        const dismiss = () => { el.classList.remove('visible'); setTimeout(() => el.remove(), 300); };
+
+        el.addEventListener('click', dismiss);
+        setTimeout(dismiss, 6000);
+      }
+
+      const es = new EventSource("/pipeline/stream");
           es.onmessage = (e) => {
             try {
               const obj = JSON.parse(e.data);
               pre.textContent = JSON.stringify(obj, null, 2);
-            } catch {
+              if (obj.alerts && obj.alerts.length) {
+            obj.alerts.forEach(a => showToast(a));
+          }
+        } catch {
               pre.textContent = e.data;
             }
           };

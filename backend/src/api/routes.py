@@ -1,12 +1,12 @@
 from __future__ import annotations
-
 import json
 import time
 import cv2
 import os
 import sqlite3
 from pathlib import Path
-from fastapi import APIRouter, Request, HTTPException
+
+from fastapi import APIRouter, Request, HTTPException, Query
 from fastapi.responses import JSONResponse, StreamingResponse
 
 
@@ -86,14 +86,13 @@ def db_test_insert():
 
 @router.get("/health")
 def health():
-    return {"status": "ok"}
-
+    return { "status": "ok" }
 
 @router.get("/frame-selector/metrics")
 def frame_selector_metrics(request: Request):
     runner = request.app.state.runner
     if not runner:
-        return JSONResponse({"error": "runner not started"}, status_code=503)
+        return JSONResponse({ "error": "runner not started" }, status_code=503)
 
     m = runner.metrics()
     return {
@@ -105,16 +104,15 @@ def frame_selector_metrics(request: Request):
         "dropped_batches": m.dropped_batches,
     }
 
-
 @router.get("/pipeline/latest")
 def pipeline_latest(request: Request):
     runner = request.app.state.runner
     if not runner:
-        return JSONResponse({"error": "runner not started"}, status_code=503)
+        return JSONResponse({ "error": "runner not started" }, status_code=503)
 
     latest = runner.latest()
     if latest is None:
-        return {"status": "no_result_yet"}
+        return { "status": "no_result_yet" }
 
     vad = latest["vad"]
     return {
@@ -132,6 +130,14 @@ def pipeline_latest(request: Request):
         "updated_at": latest["updated_at"],
     }
 
+@router.get("/alerts")
+def alerts(request: Request):
+    runner = request.app.state.runner
+    if not runner:
+        return JSONResponse({ "error": "runner not started" }, status_code=503)
+
+    return { "alerts": runner.get_alerts() }
+
 
 @router.get("/pipeline/stream")
 def pipeline_stream(request: Request):
@@ -140,7 +146,7 @@ def pipeline_stream(request: Request):
     """
     runner = request.app.state.runner
     if not runner:
-        return JSONResponse({"error": "runner not started"}, status_code=503)
+        return JSONResponse({ "error": "runner not started" }, status_code=503)
 
     def gen():
         last_id = -1
@@ -148,11 +154,10 @@ def pipeline_stream(request: Request):
             payload = runner.latest()
             if payload is not None and payload["event_id"] != last_id:
                 last_id = payload["event_id"]
-                yield f"data: {json.dumps(payload)}\n\n"
+                yield f"data: { json.dumps(payload) }\n\n"
             time.sleep(0.1)
 
     return StreamingResponse(gen(), media_type="text/event-stream")
-
 
 @router.get("/video/mjpeg")
 def video_mjpeg(request: Request):
@@ -162,7 +167,7 @@ def video_mjpeg(request: Request):
     """
     runner = request.app.state.runner
     if not runner:
-        return JSONResponse({"error": "runner not started"}, status_code=503)
+        return JSONResponse({ "error": "runner not started" }, status_code=503)
 
     boundary = "frame"
 
@@ -190,5 +195,46 @@ def video_mjpeg(request: Request):
 
     return StreamingResponse(
         gen(),
-        media_type=f"multipart/x-mixed-replace; boundary={boundary}",
+        media_type=f"multipart/x-mixed-replace; boundary={ boundary }",
     )
+
+#this is a dev-only endpoint to inject test alerts into the logger
+#TODO: remove upon project completion
+@router.post("/dev/inject_alert")
+def inject_alert(request: Request, severity: str = Query("warning"), message: str = Query("test"), source: str = Query("dev")):
+    runner = request.app.state.runner
+    if not runner:
+        return JSONResponse({ "error": "runner not started" }, status_code=503)
+
+    alert = {
+        "id": 9999,
+        "ts": time.time(),
+        "source": source,
+        "severity": severity,
+        "message": message,
+        "data": {},
+    }
+
+    runner.logger._append(alert) if hasattr(runner.logger, "_append") else runner.logger._alerts.append(alert)
+
+    with runner._lock:
+        runner._event_id += 1
+        runner._latest_payload = {
+            "event_id": runner._event_id,
+            "updated_at": time.time(),
+            "vad": {
+                "clip_id": None,
+                "ts_start": 0,
+                "ts_end": 0,
+                "label": "manual",
+                "confidence": 0.0,
+                "top_caption": None,
+                "extra": {},
+            },
+            "kg_validated": True,
+            "explanation": "manual injection",
+            "rules_fired": [],
+            "alerts": [alert],
+        }
+
+    return {"status": "ok", "alert": alert}

@@ -12,7 +12,7 @@ import torch.nn.functional as F
 from imagebind.models import imagebind_model
 from imagebind.models.imagebind_model import ModalityType
 
-from src.frame_selector.types import ClipBatch
+from ..frame_selector.types import ClipBatch
 
 
 @dataclass(frozen=True)

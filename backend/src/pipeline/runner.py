@@ -10,14 +10,16 @@ from src.frame_selector.runtime_selector import FrameSelector
 from src.frame_selector.config import FrameSelectorConfig
 from src.vad.flashback_vad import FlashbackVAD, VADOutput
 from src.pipeline.kg_stub import DummyAugmentor
+from src.logger.logger import InMemoryLogger
 
 
 class PipelineRunner:
-    def __init__(self, cfg: FrameSelectorConfig, thesis_root: str):
+    def __init__(self, cfg: FrameSelectorConfig, thesis_root: str, logger: InMemoryLogger | None = None):
         #create the frame selector, VAD and KG object
         self.selector = FrameSelector(cfg)
         self.vad = FlashbackVAD(thesis_root=thesis_root)
         self.kg = DummyAugmentor()
+        self.logger = logger or InMemoryLogger()
 
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -41,6 +43,9 @@ class PipelineRunner:
 
     def metrics(self):
         return self.selector.get_metrics()
+
+    def get_alerts(self):
+        return self.logger.get_alerts()
 
     def latest(self) -> Optional[Dict[str, Any]]:
         with self._lock:
@@ -68,7 +73,7 @@ class PipelineRunner:
             cv2.putText(out, f"Caption: {vad_out.top_caption[:70]}", (10, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (30, 30, 30), 2)
 
         return out
-#runs the VAD in a loop
+    #runs the VAD in a loop
     def _loop(self) -> None:
         last_vad: VADOutput | None = None
 
@@ -77,7 +82,7 @@ class PipelineRunner:
             if batch is None:
                 # Even before first batch: show a “waiting” frame (latest ring frame if exists)
                 try:
-                    ring_list = self.selector._ring.snapshot()  # type: ignore
+                    ring_list = self.selector._ring.snapshot()  #type: ignore
                     if ring_list:
                         frame = ring_list[-1].frame_bgr
                         with self._lock:
@@ -95,6 +100,9 @@ class PipelineRunner:
             # KG stub (Sprint 1)
             kg_out = self.kg.augment(vad_out)
 
+            #create alerts based on VAD / KG outputs (in-memory logger)
+            alerts = self.logger.handle(vad_out, kg_out)
+
             payload = {
                 "event_id": self._event_id,
                 "updated_at": time.time(),
@@ -110,6 +118,7 @@ class PipelineRunner:
                 "kg_validated": kg_out.kg_validated,
                 "explanation": kg_out.explanation,
                 "rules_fired": kg_out.rules_fired,
+                "alerts": [a.to_dict() for a in alerts],
             }
 
             # Use a frame from the batch for the video stream, to get vadz
