@@ -3,11 +3,86 @@ from __future__ import annotations
 import json
 import time
 import cv2
-from fastapi import APIRouter, Request
+import os
+import sqlite3
+from pathlib import Path
+from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 
-router = APIRouter()
 
+router = APIRouter()
+def _get_sqlite_path() -> Path:
+    """
+    Resolve the sqlite db file path from DATABASE_URL.
+    Supports:
+      - sqlite:///./backend/data/app.db
+      - sqlite:////absolute/path/app.db
+    """
+    database_url = os.getenv("DATABASE_URL", "sqlite:///./backend/data/app.db")
+
+    if not database_url.startswith("sqlite:"):
+        raise HTTPException(status_code=500, detail="DATABASE_URL is not sqlite")
+
+    # Strip scheme
+    # sqlite:///relative/or/abs  -> remove 'sqlite:///'
+    # sqlite:////abs/path       -> remove 'sqlite:////'
+    if database_url.startswith("sqlite:////"):
+        db_path_str = database_url.replace("sqlite:////", "/", 1)
+    else:
+        db_path_str = database_url.replace("sqlite:///", "", 1)
+
+    return Path(db_path_str).resolve()
+
+
+@router.get("/db/health")
+def db_health():
+    """Checks that the sqlite file exists and we can query it."""
+    db_path = _get_sqlite_path()
+
+    if not db_path.exists():
+        raise HTTPException(status_code=500, detail=f"DB file not found: {db_path}")
+
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("PRAGMA foreign_keys = ON;")
+            conn.execute("SELECT 1;")
+        return {"status": "ok", "db_path": str(db_path)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"DB health check failed: {e}")
+
+
+@router.post("/db/test-insert")
+def db_test_insert():
+    """Inserts one run + one detection to prove writes work."""
+    db_path = _get_sqlite_path()
+
+    try:
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("PRAGMA foreign_keys = ON;")
+
+            # 1) Insert a run
+            cur = conn.execute(
+                "INSERT INTO runs (mode, model_version, notes) VALUES (?, ?, ?)",
+                ("vad", "test", "test insert from /db/test-insert"),
+            )
+            run_id = cur.lastrowid
+
+            # 2) Insert a detection linked to that run
+            conn.execute(
+                """
+                INSERT INTO detections
+                  (run_id, occurred_at, camera_id, event_type, vad_score, kg_context, decision)
+                VALUES
+                  (?, datetime('now'), ?, ?, ?, ?, ?)
+                """,
+                (run_id, "cam0", "fall", 0.95, '{"rule":"demo"}', "logged"),
+            )
+
+            conn.commit()
+
+        return {"inserted": True, "run_id": run_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Insert failed: {e}")
 
 @router.get("/health")
 def health():

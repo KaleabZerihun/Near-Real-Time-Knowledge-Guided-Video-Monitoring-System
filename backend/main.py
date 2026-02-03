@@ -2,30 +2,57 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
+
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
+from dotenv import load_dotenv
 
-# Make sure imports work when running from backend/
-THIS_DIR = os.path.dirname(os.path.abspath(__file__))
-if THIS_DIR not in sys.path:
-    sys.path.insert(0, THIS_DIR)
+# Ensure `src.*` imports work when running from repo root or backend/
+THIS_DIR = Path(__file__).resolve().parent  # .../backend
+if str(THIS_DIR) not in sys.path:
+    sys.path.insert(0, str(THIS_DIR))
 
+from src.db.init_db import init_db
 from src.frame_selector.config import FrameSelectorConfig
-from src.pipeline.runner import PipelineRunner
 from src.api.routes import router as api_router
+
+# Try to import PipelineRunner; if ML deps are missing, keep API running
+try:
+    from src.pipeline.runner import PipelineRunner
+except ModuleNotFoundError as e:
+    PipelineRunner = None  # type: ignore
+    print(f"[WARN] PipelineRunner disabled (missing dependency): {e}")
 
 app = FastAPI(title="Near Real-Time Knowledge-Guided Video Monitoring (Sprint 1)")
 
-runner: PipelineRunner | None = None
+runner = None  # PipelineRunner | None (kept untyped for when PipelineRunner is None)
 
 
 @app.on_event("startup")
 def startup() -> None:
     global runner
 
-    # repo root is one level above backend/
-    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    thesis_root = os.path.join(repo_root, "THESIS")
+    # Repo root is one level above backend/
+    repo_root = THIS_DIR.parent
+    thesis_root = repo_root / "THESIS"
+
+    # Load env vars from repo root (.env)
+    env_path = repo_root / ".env"
+    load_dotenv(env_path)
+
+    # Stable default DB location: backend/data/app.db
+    default_db_path = (THIS_DIR / "data" / "app.db").resolve()
+    database_url = os.getenv("DATABASE_URL", f"sqlite:///{default_db_path.as_posix()}")
+
+    # Ensure DB + tables exist
+    init_db(database_url)
+
+    # If ML deps missing, skip runner but keep API/Dashboard alive
+    if PipelineRunner is None:
+        print("[WARN] Skipping PipelineRunner startup; API will run without pipeline.")
+        runner = None
+        return
 
     cfg = FrameSelectorConfig(
         source=0, #which webcam
@@ -38,7 +65,7 @@ def startup() -> None:
         max_batches=8, #queue size
     )
 
-    runner = PipelineRunner(cfg=cfg, thesis_root=thesis_root)
+    runner = PipelineRunner(cfg=cfg, thesis_root=str(thesis_root))
     runner.start()
 
 
@@ -51,9 +78,21 @@ def shutdown() -> None:
     os._exit(0)
 
 
+@app.get("/status")
+def status():
+    """Simple status endpoint so the dashboard can decide whether to call pipeline endpoints."""
+    return {"pipeline_enabled": runner is not None}
+
+
+@app.get("/favicon.ico")
+def favicon():
+    """Avoid 404 spam in logs."""
+    return Response(status_code=204)
+
+
 @app.get("/", response_class=HTMLResponse)
 def dashboard():
-    # Simple “Sprint 1” dashboard (video + live JSON)
+    # Dashboard loads even if pipeline is disabled
     return HTMLResponse(
         """
 <!doctype html>
@@ -68,6 +107,8 @@ def dashboard():
       img { width: 720px; max-width: 100%; border-radius: 10px; border: 1px solid #eee; }
       pre { background: #0b1020; color: #e7e7e7; padding: 12px; border-radius: 10px; overflow: auto; width: 520px; max-width: 100%; }
       .muted { color: #666; font-size: 13px; }
+      .warn { background: #fff3cd; border: 1px solid #ffeeba; padding: 10px; border-radius: 10px; margin-top: 10px; }
+      code { background: #f6f6f6; padding: 1px 4px; border-radius: 6px; }
     </style>
   </head>
   <body>
@@ -76,32 +117,65 @@ def dashboard():
       Video: <code>/video/mjpeg</code> | Live VAD stream: <code>/pipeline/stream</code> | Metrics: <code>/frame-selector/metrics</code>
     </div>
 
+    <div class="warn" id="pipelineWarn" style="display:none;">
+      <b>Pipeline is disabled.</b>
+      This API is running, but ML dependencies are missing, so <code>/video/mjpeg</code> and <code>/pipeline/stream</code> will not be called.
+    </div>
+
     <div class="row" style="margin-top:12px;">
       <div class="card">
         <h3>Live Video</h3>
-        <img src="/video/mjpeg" />
+        <div id="videoWrap">
+          <img id="videoImg" alt="Live video stream" />
+        </div>
       </div>
 
       <div class="card">
         <h3>Live VAD Output</h3>
-        <pre id="out">{ "status": "waiting_for_first_result" }</pre>
+        <pre id="out">{ "status": "checking_pipeline_status" }</pre>
       </div>
     </div>
 
     <script>
       const pre = document.getElementById("out");
-      const es = new EventSource("/pipeline/stream");
-      es.onmessage = (e) => {
-        try {
-          const obj = JSON.parse(e.data);
-          pre.textContent = JSON.stringify(obj, null, 2);
-        } catch {
-          pre.textContent = e.data;
-        }
-      };
-      es.onerror = () => {
-        pre.textContent = "{ \\"error\\": \\"SSE disconnected — refresh page\\" }";
-      };
+      const warn = document.getElementById("pipelineWarn");
+      const img = document.getElementById("videoImg");
+
+      fetch("/status")
+        .then(r => r.json())
+        .then(s => {
+          if (!s.pipeline_enabled) {
+            warn.style.display = "block";
+            pre.textContent = JSON.stringify({ status: "pipeline_disabled" }, null, 2);
+            // Do NOT request /video/mjpeg or /pipeline/stream when disabled
+            img.style.display = "none";
+            return;
+          }
+
+          // Pipeline is enabled: now it's safe to call endpoints
+          warn.style.display = "none";
+          img.style.display = "block";
+          img.src = "/video/mjpeg";
+
+          const es = new EventSource("/pipeline/stream");
+          es.onmessage = (e) => {
+            try {
+              const obj = JSON.parse(e.data);
+              pre.textContent = JSON.stringify(obj, null, 2);
+            } catch {
+              pre.textContent = e.data;
+            }
+          };
+          es.onerror = () => {
+            pre.textContent = JSON.stringify({ error: "SSE disconnected — refresh page" }, null, 2);
+            try { es.close(); } catch {}
+          };
+        })
+        .catch(() => {
+          warn.style.display = "block";
+          pre.textContent = JSON.stringify({ error: "status check failed" }, null, 2);
+          img.style.display = "none";
+        });
     </script>
   </body>
 </html>

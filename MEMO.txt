@@ -1,0 +1,145 @@
+SQLite DB Handoff Specification
+
+1.  DB Type: SQLite
+    DB file: backend/data/app.db
+    Schema file: backend/db/schema.sql
+    Auto-init on API startup: src/db/init_db.py is called from backend/main.py (startup event)
+    Environment variable: DATABASE_URL
+
+2. What the DB is for (as of now):
+    This DB supports:
+        - Event logging (detections + decisions)
+        - Alerts tracking (ack/resolution)
+        - Run tracking (group detections/metrics by session)
+        - System performance metrics (fps, latency, queue depth)
+        
+        It’s designed for:
+        - VAD → writes detections
+        - Knowledge Graph → adds kg_context and/or impacts decision
+        - Dashboard → reads from detections + alerts
+        - Performance tracking → writes system_metrics
+
+3. Database Tables — Minimal Overview
+- runs
+    What it is: One row per system execution (session).
+    Why it exists: Groups detections and metrics under a single run.
+    - Written when the system starts
+    - Read for experiments, comparisons (vad vs vad+kg)
+    - Key fields: mode, started_at, ended_at
+
+- detections (core table)
+    What it is: One row per detected event.
+    Why it exists: Logs what the system detected and decided.
+    - Written by VAD / pipeline (or mock)
+    - Read by dashboard, alert logic, analytics
+    - Key fields: event_type, vad_score, kg_context, decision
+    - Linked to 'runs'
+
+- alerts
+    What it is: One row per alert generated from a detection.
+    Why it exists: Tracks alert lifecycle separately from detections.
+    - Written only when a detection is “alerted”
+    - Read by dashboard / notifications
+    - Key fields: severity, status
+    - Linked to 'detections'
+
+- system_metrics
+    What it is: Periodic performance samples.
+    Why it exists: Measures real-time performance and system health.
+    - Written on a timer (e.g., every 1–5 seconds)
+    - Read for graphs and evaluation
+    - Key fields: fps, inference_ms, queue_depth
+    - Linked to 'runs'
+
+4. Key “inputs → outputs” patterns teammates should follow
+
+Pattern 1: Start of run (backend / runner)
+
+Input: system starts
+DB output: insert one row into runs
+
+Example SQL:
+    INSERT INTO runs (mode, model_version, notes)
+    VALUES ('vad', 'v1', 'local dev run');
+
+Pattern 2: Log detection (VAD result)
+
+Input: VAD outputs {event_type, score, camera_id, timestamp}
+DB output: insert into detections
+
+Example SQL:
+    INSERT INTO detections (run_id, occurred_at, camera_id, event_type, vad_score, decision)
+    VALUES (1, datetime('now'), 'webcam0', 'fall', 0.92, 'logged');
+
+Pattern 3: Enrich with KG context
+
+Input: KG returns a rule/relationship/extra facts
+DB output: set kg_context and possibly change decision
+
+Example update:
+    UPDATE detections
+    SET kg_context = '{"rule":"restricted_zone","zone":"A"}',
+        decision = 'alerted'
+    WHERE id = 12;
+
+Pattern 4: Create alert (when decision = alerted)
+
+Input: detection marked alerted
+DB output: insert into alerts
+    INSERT INTO alerts (detection_id, severity, status, channel)
+    VALUES (12, 'high', 'new', 'dashboard');
+
+Pattern 5: Log metrics periodically
+
+Input: loop metrics (fps, inference latency, queue depth)
+DB output: insert into system_metrics
+    INSERT INTO system_metrics (run_id, inference_ms, fps, queue_depth, detections_cnt)
+    VALUES (1, 42.5, 8.0, 3, 1);
+
+5. What we should NOT do
+    - Don’t log every frame into the DB (too many writes). Log:
+        - detections only (events)
+        - metrics every 1–5 seconds
+    - Don’t store Python dict directly in kg_context; store JSON string   #this is b/c Databases store text and numbers, not Python objects.
+                                                                        #and A Python dict only exists in Python’s memory, while the database is language-agnostic.
+    - Don’t invent new decision/severity/status values (CHECK constraints will reject)
+
+6. Dev endpoints (available)
+(These exist in our API router if we added them.)
+    - GET /status → { "pipeline_enabled": false/true }
+    - GET /db/health → validates DB exists + SELECT 1 works
+    - POST /db/test-insert → inserts 1 run + 1 detection for verification
+
+Quick check
+curl http://127.0.0.1:8000/db/health
+curl -X POST http://127.0.0.1:8000/db/test-insert
+
+7. Common queries we will need  
+/*These queries retrieve recent detections, active alerts, and recent performance metrics for real-time monitoring*/
+/*and dashboard visualization, but they do not evaluate system accuracy, false-alarm rates, or end-to-end processing delays yet.*/
+Latest detections
+    SELECT id, occurred_at, camera_id, event_type, vad_score, decision
+    FROM detections
+    ORDER BY occurred_at DESC
+    LIMIT 20;
+
+Alerts that need attention
+    SELECT a.id, a.created_at, a.severity, a.status, d.camera_id, d.event_type
+    FROM alerts a
+    JOIN detections d ON d.id = a.detection_id
+    WHERE a.status IN ('new','acknowledged')
+    ORDER BY a.created_at DESC;
+
+Metrics graph (last N)      # 'N' - the number of most recent data points we want to show
+    SELECT recorded_at, inference_ms, fps, queue_depth
+    FROM system_metrics
+    ORDER BY recorded_at DESC
+    LIMIT 200;
+
+8. If you hit “DB file not found”
+
+    - Make sure .env exists in repo root and/or DATABASE_URL is set correctly
+    - Ensure folders exist:
+        - backend/db/schema.sql
+        - backend/data/ (created automatically by init)
+    - Restart server so init_db() runs again
