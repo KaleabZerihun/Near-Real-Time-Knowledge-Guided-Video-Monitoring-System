@@ -1,39 +1,58 @@
 from __future__ import annotations
-
 import os
 import sys
+import threading
 from pathlib import Path
-
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, Response
-from dotenv import load_dotenv
 
 # Ensure `src.*` imports work when running from repo root or backend/
-THIS_DIR = Path(__file__).resolve().parent  # .../backend
+THIS_DIR = Path(__file__).resolve().parent  
 if str(THIS_DIR) not in sys.path:
     sys.path.insert(0, str(THIS_DIR))
 
-from src.db.init_db import init_db
-from src.frame_selector.config import FrameSelectorConfig
 from src.api.routes import router as api_router
+from src.db.init_db import init_db
+from src.db.retention import run_retention_once
+from src.frame_selector.config import FrameSelectorConfig
 
 # Try to import PipelineRunner; if ML deps are missing, keep API running
 try:
     from src.pipeline.runner import PipelineRunner
 except ModuleNotFoundError as e:
-    PipelineRunner = None  # type: ignore
+    PipelineRunner = None  
     print(f"[WARN] PipelineRunner disabled (missing dependency): {e}")
+app = FastAPI(title="Near Real-Time Knowledge-Guided Video Monitoring")
 
-app = FastAPI(title="Near Real-Time Knowledge-Guided Video Monitoring (Sprint 1)")
+runner = None  
 
-runner = None  # PipelineRunner | None (kept untyped for when PipelineRunner is None)
+_stop_retention = threading.Event()
+_retention_thread: threading.Thread | None = None
 
+def _retention_loop() -> None:
+    while not _stop_retention.is_set():
+        try:
+            result = run_retention_once(
+                keep_events_days=30,  # archive >30d to events_archive
+                keep_orphans_days=7,  # delete unmatched inputs after 7d
+                do_vacuum=False,
+            )
+            print("[retention]", result)
+        except Exception as e:
+            print("[retention] error:", e)
+
+        _stop_retention.wait(30 * 60)  # every 30 minutes
 
 @app.on_event("startup")
 def startup() -> None:
-    global runner
+    # Startup order (important):
+    #  1) load .env
+    #  2) init DB/schema
+    #  3) start pipeline runner (if available)
+    #  4) start retention thread
+    global runner, _retention_thread
 
-    # Repo root is one level above backend/
     repo_root = THIS_DIR.parent
     thesis_root = repo_root / "THESIS"
 
@@ -41,54 +60,58 @@ def startup() -> None:
     env_path = repo_root / ".env"
     load_dotenv(env_path)
 
-    # Stable default DB location: backend/data/app.db
-    default_db_path = (THIS_DIR / "data" / "app.db").resolve()
-    database_url = os.getenv("DATABASE_URL", f"sqlite:///{default_db_path.as_posix()}")
+    # Ensure DB + tables exist 
+    try:
+        init_db()
+    except TypeError:
+        default_db_path = (THIS_DIR / "data" / "app.db").resolve()
+        database_url = os.getenv("DATABASE_URL", f"sqlite:///{default_db_path.as_posix()}")
+        init_db(database_url)
 
-    # Ensure DB + tables exist
-    init_db(database_url)
-
-    # If ML deps missing, skip runner but keep API/Dashboard alive
+    # Start pipeline runner 
     if PipelineRunner is None:
         print("[WARN] Skipping PipelineRunner startup; API will run without pipeline.")
         runner = None
-        return
+    else:
+        cfg = FrameSelectorConfig(
+            source=0,  # webcam index
+            source_id="webcam0",
+            target_fps=8.0,
+            resize_hw=(224, 224),
+            clip_len=16,
+            stride=8,
+            frame_ring_maxlen=256,
+            max_batches=8,
+        )
+        runner = PipelineRunner(cfg=cfg, thesis_root=str(thesis_root))
+        runner.start()
 
-    cfg = FrameSelectorConfig(
-        source=0, #which webcam
-        source_id="webcam0", 
-        target_fps=8.0, #how many fps
-        resize_hw=(224, 224), #resize frames for vad model input
-        clip_len=16, # how batches are formed
-        stride=8, 
-        frame_ring_maxlen=256, # buffer size
-        max_batches=8, #queue size
-    )
-
-    runner = PipelineRunner(cfg=cfg, thesis_root=str(thesis_root))
-    runner.start()
-
+    # Start retention background thread
+    _stop_retention.clear()
+    _retention_thread = threading.Thread(target=_retention_loop, daemon=True)
+    _retention_thread.start()
 
 @app.on_event("shutdown")
 def shutdown() -> None:
     global runner
+
+    # Stop retention loop
+    _stop_retention.set()
+
+    # Stop pipeline runner
     if runner:
         runner.stop()
         runner = None
-    os._exit(0)
-
 
 @app.get("/status")
 def status():
-    """Simple status endpoint so the dashboard can decide whether to call pipeline endpoints."""
+    # Simple status endpoint so the dashboard can decide whether to call pipeline endpoints.
     return {"pipeline_enabled": runner is not None}
-
 
 @app.get("/favicon.ico")
 def favicon():
-    """Avoid 404 spam in logs."""
+    # Avoid 404 spam in logs.
     return Response(status_code=204)
-
 
 @app.get("/", response_class=HTMLResponse)
 def dashboard():
@@ -109,6 +132,14 @@ def dashboard():
       .muted { color: #666; font-size: 13px; }
       .warn { background: #fff3cd; border: 1px solid #ffeeba; padding: 10px; border-radius: 10px; margin-top: 10px; }
       code { background: #f6f6f6; padding: 1px 4px; border-radius: 6px; }
+
+      #toasts { position: fixed; right: 18px; top: 18px; display: flex; flex-direction: column; gap: 8px; z-index: 9999; pointer-events: none; }
+      .toast { min-width: 260px; max-width: 360px; pointer-events: auto; background: #fff; color: #111; padding: 10px 12px; border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,0.18); transform: translateY(-8px) scale(0.98); opacity: 0; transition: all 0.25s ease; font-size: 14px; }
+      .toast.visible { transform: translateY(0) scale(1); opacity: 1; }
+      .toast.info { border-left: 4px solid grey; }
+      .toast.warning { border-left: 4px solid orange; }
+      .toast.critical { border-left: 4px solid red; }
+      .toast.meta { font-size: 11px; color: dark grey; margin-top: 6px; }
     </style>
   </head>
   <body>
@@ -147,21 +178,39 @@ def dashboard():
           if (!s.pipeline_enabled) {
             warn.style.display = "block";
             pre.textContent = JSON.stringify({ status: "pipeline_disabled" }, null, 2);
-            // Do NOT request /video/mjpeg or /pipeline/stream when disabled
             img.style.display = "none";
             return;
           }
 
-          // Pipeline is enabled: now it's safe to call endpoints
           warn.style.display = "none";
           img.style.display = "block";
           img.src = "/video/mjpeg";
+
+          const toastContainer = document.createElement('div');
+          toastContainer.id = 'toasts';
+          document.body.appendChild(toastContainer);
+
+          function showToast(alert) {
+            const el = document.createElement('div');
+            el.className = 'toast ' + (alert.severity || 'info');
+            el.innerHTML = `<strong>${alert.source.toUpperCase()}</strong>: ${alert.message}<div class="meta">${new Date(alert.ts * 1000).toLocaleTimeString()}</div>`;
+            toastContainer.appendChild(el);
+
+            requestAnimationFrame(() => el.classList.add('visible'));
+
+            const dismiss = () => { el.classList.remove('visible'); setTimeout(() => el.remove(), 300); };
+            el.addEventListener('click', dismiss);
+            setTimeout(dismiss, 6000);
+          }
 
           const es = new EventSource("/pipeline/stream");
           es.onmessage = (e) => {
             try {
               const obj = JSON.parse(e.data);
               pre.textContent = JSON.stringify(obj, null, 2);
+              if (obj.alerts && obj.alerts.length) {
+                obj.alerts.forEach(a => showToast(a));
+              }
             } catch {
               pre.textContent = e.data;
             }
@@ -182,12 +231,10 @@ def dashboard():
         """
     )
 
-
 # Give API router access to the runner via app.state
 @app.middleware("http")
 async def attach_runner(request, call_next):
     request.app.state.runner = runner
     return await call_next(request)
-
 
 app.include_router(api_router)

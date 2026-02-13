@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, List
 
-from src.vad.flashback_vad import VADOutput
+from ..vad.flashback_vad import VADOutput
 
 #can add augmentor logic here
 @dataclass(frozen=True)

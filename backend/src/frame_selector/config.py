@@ -1,15 +1,10 @@
 from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import Tuple
 
-
 @dataclass(frozen=True)
 class FrameSelectorConfig:
-    """
-    Central configuration for capture/selection/batching.
-    Used in Steps 2–4.
-    """
+    # Central configuration for capture/selection/batching. Used in Steps 2–4.
     # Video source: 0 for default webcam, or a filepath like "data/demo.mp4"
     source: int | str = 0
     source_id: str = "webcam0"

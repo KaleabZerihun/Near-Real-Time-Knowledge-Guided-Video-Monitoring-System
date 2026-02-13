@@ -1,12 +1,9 @@
 import time
 import numpy as np
 
-
 class FakeVideoCapture:
-    """
-    Fake cv2.VideoCapture that generates synthetic frames.
-    """
-    def __init__(self, source=0, fps=30, shape=(480, 640, 3)):
+    # VideoCapture that generates synthetic frames.
+    def __init__(self, source=0, fps=30, shape=(480, 640, 3)):      #shape is for the image arrays (height, width, color channels) in NumPy
         self.source = source
         self._opened = True
         self.fps = fps
@@ -17,9 +14,9 @@ class FakeVideoCapture:
 
     def isOpened(self):
         return self._opened
-
+    
+    # throttle to fps to mimic camera timing
     def read(self):
-        # throttle to fps to mimic camera timing
         now = time.time()
         if now - self._last < self.dt:
             time.sleep(max(0.0, self.dt - (now - self._last)))

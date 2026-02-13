@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 from collections import deque
 from threading import Lock
 from typing import Deque, List, Tuple
@@ -7,12 +6,9 @@ import queue
 
 from .types import FramePacket, ClipBatch
 
-
 class FrameRingBuffer:
-    """
-    Thread-safe bounded ring buffer for FramePacket.
-    Drops oldest frames when full. Counts drops.
-    """
+    # Thread-safe bounded ring buffer for FramePacket. 
+    # Drops oldest frames when full. Counts drops.
     def __init__(self, maxlen: int):
         if maxlen <= 0:
             raise ValueError("maxlen must be > 0")
