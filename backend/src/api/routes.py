@@ -129,6 +129,15 @@ def pipeline_latest(request: Request):
         "event_id": latest["event_id"],
         "updated_at": latest["updated_at"],
     }
+@router.get("/pipeline/history")
+def pipeline_history(request: Request, limit: int = Query(300, ge=1, le=2000)):
+    runner = request.app.state.runner
+    if not runner:
+        return JSONResponse({"error": "runner not started"}, status_code=503)
+
+    # Overtime performance data for graph: x=time, y=confidence
+    return {"points": runner.confidence_history(limit=limit)}
+
 
 @router.get("/alerts")
 def alerts(request: Request):

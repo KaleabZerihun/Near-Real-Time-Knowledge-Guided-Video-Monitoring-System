@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 
 import cv2
+from collections import deque
 
 from src.frame_selector.runtime_selector import FrameSelector
 from src.frame_selector.config import FrameSelectorConfig
@@ -28,6 +29,10 @@ class PipelineRunner:
         self._latest_payload: Optional[Dict[str, Any]] = None
         self._latest_frame_bgr = None
         self._event_id = 0
+        # Store (timestamp, confidence) points for overtime performance graph
+        # Keep it bounded so it doesn't grow forever.
+        #overtime performance
+        self._confidence_history: deque[Tuple[float, float]] = deque(maxlen=600)
     # run the frame selecor
     def start(self) -> None:
         self.selector.start()
@@ -58,21 +63,23 @@ class PipelineRunner:
     def _overlay(self, frame_bgr, vad_out: VADOutput | None):
         if frame_bgr is None:
             return None
+        return frame_bgr.copy()
 
-        out = frame_bgr.copy()
-        if vad_out is None:
-            cv2.putText(out, "VAD: waiting...", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 200, 255), 2)
-            return out
 
-        label = vad_out.label.upper()
-        conf = vad_out.confidence
-        color = (0, 255, 0) if label == "NORMAL" else (0, 0, 255)
+        # out = frame_bgr.copy()
+        # if vad_out is None:
+        #     cv2.putText(out, "VAD: waiting...", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 200, 255), 2)
+        #     return out
 
-        cv2.putText(out, f"VAD: {label}  conf={conf:.3f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2)
-        if vad_out.top_caption:
-            cv2.putText(out, f"Caption: {vad_out.top_caption[:70]}", (10, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (30, 30, 30), 2)
+        # label = vad_out.label.upper()
+        # conf = vad_out.confidence
+        # color = (0, 255, 0) if label == "NORMAL" else (0, 0, 255)
 
-        return out
+        # cv2.putText(out, f"VAD: {label}  conf={conf:.3f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1.0, color, 2)
+        # if vad_out.top_caption:
+        #     cv2.putText(out, f"Caption: {vad_out.top_caption[:70]}", (10, 65), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (30, 30, 30), 2)
+
+        # return out
     #runs the VAD in a loop
     def _loop(self) -> None:
         last_vad: VADOutput | None = None
@@ -124,8 +131,11 @@ class PipelineRunner:
             # Use a frame from the batch for the video stream, to get vadz
             mid = len(batch.frames) // 2
             frame = batch.frames[mid].frame_bgr
+            now_ts = time.time()
+
 
             with self._lock:
+                self._confidence_history.append((now_ts, float(vad_out.confidence)))
                 self._latest_payload = payload
                 self._latest_frame_bgr = self._overlay(frame, vad_out)
                 self._event_id += 1

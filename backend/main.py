@@ -24,7 +24,7 @@ except ModuleNotFoundError as e:
     PipelineRunner = None  # type: ignore
     print(f"[WARN] PipelineRunner disabled (missing dependency): {e}")
 
-app = FastAPI(title="Near Real-Time Knowledge-Guided Video Monitoring (Sprint 1)")
+app = FastAPI(title="Near Real-Time Knowledge-Guided Video Monitoring")
 
 runner = None  # PipelineRunner | None (kept untyped for when PipelineRunner is None)
 
@@ -55,14 +55,14 @@ def startup() -> None:
         return
 
     cfg = FrameSelectorConfig(
-        source=0, #which webcam
-        source_id="webcam0", 
-        target_fps=8.0, #how many fps
-        resize_hw=(224, 224), #resize frames for vad model input
-        clip_len=16, # how batches are formed
-        stride=8, 
+        source=0,  # which webcam
+        source_id="webcam0",
+        target_fps=8.0,        # how many fps
+        resize_hw=(224, 224),  # resize frames for vad model input
+        clip_len=16,           # how batches are formed
+        stride=8,
         frame_ring_maxlen=256, # buffer size
-        max_batches=8, #queue size
+        max_batches=8,         # queue size
     )
 
     runner = PipelineRunner(cfg=cfg, thesis_root=str(thesis_root))
@@ -99,10 +99,10 @@ def dashboard():
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Sprint 1 Live Dashboard</title>
+    <title>Dashboard</title>
     <style>
       body { font-family: Arial, sans-serif; margin: 18px; }
-      .row { display: flex; gap: 18px; align-items: flex-start; }
+      .row { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
       .card { border: 1px solid #ddd; border-radius: 10px; padding: 12px; }
       img { width: 720px; max-width: 100%; border-radius: 10px; border: 1px solid #eee; }
       pre { background: #0b1020; color: #e7e7e7; padding: 12px; border-radius: 10px; overflow: auto; width: 520px; max-width: 100%; }
@@ -117,12 +117,14 @@ def dashboard():
       .toast.warning { border-left: 4px solid orange; }
       .toast.critical { border-left: 4px solid red; }
       .toast.meta { font-size: 11px; color: dark grey; margin-top: 6px; }
+
+      canvas { width: 720px; max-width: 100%; height: 240px; border: 1px solid #eee; border-radius: 10px; }
     </style>
   </head>
   <body>
-    <h2>Sprint 1 — Live Webcam + VAD (FastAPI)</h2>
     <div class="muted">
-      Video: <code>/video/mjpeg</code> | Live VAD stream: <code>/pipeline/stream</code> | Metrics: <code>/frame-selector/metrics</code>
+      Video: <code>/video/mjpeg</code> | Live VAD stream: <code>/pipeline/stream</code> |
+      Metrics: <code>/frame-selector/metrics</code> | Overtime: <code>/pipeline/history</code>
     </div>
 
     <div class="warn" id="pipelineWarn" style="display:none;">
@@ -133,6 +135,9 @@ def dashboard():
     <div class="row" style="margin-top:12px;">
       <div class="card">
         <h3>Live Video</h3>
+        <div id="vadBadge" style="margin: 8px 0 10px 0; padding: 8px 10px; border: 1px solid #eee; border-radius: 10px; background: #fafafa; font-weight: 700;">
+             VAD: waiting...
+        </div>
         <div id="videoWrap">
           <img id="videoImg" alt="Live video stream" />
         </div>
@@ -142,21 +147,145 @@ def dashboard():
         <h3>Live VAD Output</h3>
         <pre id="out">{ "status": "checking_pipeline_status" }</pre>
       </div>
+
+      <div class="card">
+        <h3>Overtime Performance VAD Only(Confidence vs Time)</h3>
+        <div class="muted" style="margin-bottom:8px;">X-axis = time, Y-axis = VAD confidence</div>
+        <canvas id="perfChart" width="720" height="240"></canvas>
+      </div>
     </div>
 
     <script>
       const pre = document.getElementById("out");
       const warn = document.getElementById("pipelineWarn");
       const img = document.getElementById("videoImg");
+      const badge = document.getElementById("vadBadge");
+
+      const toastContainer = document.createElement('div');
+      toastContainer.id = 'toasts';
+      document.body.appendChild(toastContainer);
+
+      function showToast(alert) {
+        const el = document.createElement('div');
+        el.className = 'toast ' + (alert.severity || 'info');
+        el.innerHTML = `<strong>${(alert.source || "SRC").toUpperCase()}</strong>: ${alert.message}<div class="meta">${new Date(alert.ts * 1000).toLocaleTimeString()}</div>`;
+        toastContainer.appendChild(el);
+
+        requestAnimationFrame(() => el.classList.add('visible'));
+
+        const dismiss = () => { el.classList.remove('visible'); setTimeout(() => el.remove(), 300); };
+        el.addEventListener('click', dismiss);
+        setTimeout(dismiss, 6000);
+      }
+
+      // ---------------- Overtime graph (canvas) ----------------
+      // thissssssssssssssssssssss isssssssssssssss ittttttttttttttttttttttt
+      const canvas = document.getElementById("perfChart");
+      const ctx = canvas ? canvas.getContext("2d") : null;
+
+      // store points: {t: unixSeconds, confidence: 0..1}
+      const points = [];
+      const MAX_POINTS = 300;
+
+      function pushPoint(t, confidence) {
+        if (!Number.isFinite(t) || !Number.isFinite(confidence)) return;
+        points.push({ t, confidence });
+        while (points.length > MAX_POINTS) points.shift();
+      }
+
+      function drawChart() {
+        // clear
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // background
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // axes area
+        const padL = 52, padR = 12, padT = 10, padB = 26;
+        const w = canvas.width - padL - padR;
+        const h = canvas.height - padT - padB;
+
+        // axis lines
+        ctx.strokeStyle = "#cccccc";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(padL, padT);
+        ctx.lineTo(padL, padT + h);
+        ctx.lineTo(padL + w, padT + h);
+        ctx.stroke();
+
+        // y labels (0, 0.5, 1.0)
+        ctx.fillStyle = "#333333";
+        ctx.font = "12px Arial";
+        const yTicks = [0, 0.5, 1.0];
+        yTicks.forEach(v => {
+          const y = padT + (1 - v) * h;
+          ctx.strokeStyle = "#eeeeee";
+          ctx.beginPath();
+          ctx.moveTo(padL, y);
+          ctx.lineTo(padL + w, y);
+          ctx.stroke();
+
+          ctx.fillStyle = "#333333";
+          ctx.fillText(v.toFixed(1), 10, y + 4);
+        });
+
+        if (points.length < 2) {
+          ctx.fillStyle = "#666";
+          ctx.fillText("Waiting for VAD confidence...", padL + 10, padT + 18);
+          return;
+        }
+
+        const tMin = points[0].t;
+        const tMax = points[points.length - 1].t;
+        const tSpan = Math.max(1e-6, tMax - tMin);
+
+        // x labels: left + right time
+        const leftLabel = new Date(tMin * 1000).toLocaleTimeString();
+        const rightLabel = new Date(tMax * 1000).toLocaleTimeString();
+        ctx.fillStyle = "#333333";
+        ctx.fillText(leftLabel, padL, padT + h + 18);
+        ctx.fillText(rightLabel, padL + w - ctx.measureText(rightLabel).width, padT + h + 18);
+
+        // line plot
+        ctx.strokeStyle = "#1f77b4";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let i = 0; i < points.length; i++) {
+          const p = points[i];
+          const x = padL + ((p.t - tMin) / tSpan) * w;
+          const y = padT + (1 - Math.max(0, Math.min(1, p.confidence))) * h;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        // latest dot
+        const last = points[points.length - 1];
+        const xLast = padL + ((last.t - tMin) / tSpan) * w;
+        const yLast = padT + (1 - Math.max(0, Math.min(1, last.confidence))) * h;
+        ctx.fillStyle = "#d62728";
+        ctx.beginPath();
+        ctx.arc(xLast, yLast, 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // latest value text
+        ctx.fillStyle = "#111";
+        ctx.fillText(`latest: ${last.confidence.toFixed(3)}`, padL + 10, padT + 18);
+      }
+      // YAAAAAAAAAAAAAAAPPPPPPPPPPPPP
+      // --------------------------------------------------------
 
       fetch("/status")
         .then(r => r.json())
-        .then(s => {
+        .then(async (s) => {
           if (!s.pipeline_enabled) {
+          if (badge) badge.textContent = "VAD: pipeline disabled";
             warn.style.display = "block";
             pre.textContent = JSON.stringify({ status: "pipeline_disabled" }, null, 2);
-            // Do NOT request /video/mjpeg or /pipeline/stream when disabled
             img.style.display = "none";
+            drawChart();
             return;
           }
 
@@ -165,39 +294,49 @@ def dashboard():
           img.style.display = "block";
           img.src = "/video/mjpeg";
 
-    
-      const toastContainer = document.createElement('div');
-      toastContainer.id = 'toasts';
-      document.body.appendChild(toastContainer);
+          // Load initial overtime points
+          try {
+            const histRes = await fetch("/pipeline/history?limit=300");
+            const hist = await histRes.json();
+            if (hist.points && Array.isArray(hist.points)) {
+              hist.points.forEach(p => pushPoint(p.t, p.confidence));
+              drawChart();
+            }
+          } catch (e) {
+            // ignore
+            drawChart();
+          }
 
-      function showToast(alert) {
-        const el = document.createElement('div');
-
-        el.className = 'toast ' + (alert.severity || 'info');
-        el.innerHTML = `<strong>${alert.source.toUpperCase()}</strong>: ${alert.message}<div class="meta">${new Date(alert.ts * 1000).toLocaleTimeString()}</div>`;
-        toastContainer.appendChild(el);
-
-        requestAnimationFrame(() => el.classList.add('visible'));
-
-        const dismiss = () => { el.classList.remove('visible'); setTimeout(() => el.remove(), 300); };
-
-        el.addEventListener('click', dismiss);
-        setTimeout(dismiss, 6000);
-      }
-
-      const es = new EventSource("/pipeline/stream");
+          const es = new EventSource("/pipeline/stream");
+          es.onopen = () => {
+            if (badge) badge.textContent = "VAD: SSE connected...";
+          };
           es.onmessage = (e) => {
             try {
               const obj = JSON.parse(e.data);
               pre.textContent = JSON.stringify(obj, null, 2);
+              if (badge && obj && obj.vad) {
+                const label = String(obj.vad.label || "").toUpperCase();
+                const conf = (typeof obj.vad.confidence === "number") ? obj.vad.confidence.toFixed(3) : "N/A";
+                badge.textContent = `VAD: ${label} | confidence: ${conf}`;
+              }
+
+              // Update graph in real-time from SSE payload
+              if (obj && obj.updated_at && obj.vad && typeof obj.vad.confidence === "number") {
+                pushPoint(obj.updated_at, obj.vad.confidence);
+                drawChart();
+              }
+
               if (obj.alerts && obj.alerts.length) {
-            obj.alerts.forEach(a => showToast(a));
-          }
-        } catch {
+                obj.alerts.forEach(a => showToast(a));
+              }
+            } catch {
               pre.textContent = e.data;
             }
           };
+
           es.onerror = () => {
+          if (badge) badge.textContent = "VAD: SSE disconnected — refresh page";
             pre.textContent = JSON.stringify({ error: "SSE disconnected — refresh page" }, null, 2);
             try { es.close(); } catch {}
           };
@@ -206,6 +345,7 @@ def dashboard():
           warn.style.display = "block";
           pre.textContent = JSON.stringify({ error: "status check failed" }, null, 2);
           img.style.display = "none";
+          drawChart();
         });
     </script>
   </body>
