@@ -4,3 +4,7 @@ pytest-cov
 python-dotenv
 numpy
 opencv-python
+fastapi
+uvicorn
+torch
+torchvision

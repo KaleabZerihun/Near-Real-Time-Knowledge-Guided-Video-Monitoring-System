@@ -1,5 +1,4 @@
 from __future__ import annotations
-
 import time
 import threading
 from typing import Optional
@@ -12,18 +11,15 @@ from .config import FrameSelectorConfig
 from .types import FramePacket, ClipBatch, FrameSelectorMetrics
 from .selector import IFrameSelector
 
-
 class FrameSelector(IFrameSelector):
-    """
-    Frame Selector runtime (Steps 2–4):
-    - Captures frames from an OpenCV source
-    - Resizes frames
-    - Applies frame selection (target_fps sampling; Step 3)
-    - Buffers selected frames in a bounded ring buffer (backpressure)
-    - Builds ClipBatch outputs using clip_len and stride
-    - Enqueues batches in a bounded queue with drop-oldest policy (backpressure)
-    - Tracks metrics + logs queue depth/drop counters periodically (Step 4)
-    """
+    # Frame Selector runtime:
+    #   - Captures frames from an OpenCV source
+    #   - Resizes frames
+    #   - Applies frame selection (target_fps sampling;)
+    #   - Buffers selected frames in a bounded ring buffer (backpressure)
+    #   - Builds ClipBatch outputs using clip_len and stride
+    #   - Enqueues batches in a bounded queue with drop-oldest policy (backpressure)
+    #   - Tracks metrics + logs queue depth/drop counters periodically
 
     def __init__(self, cfg: FrameSelectorConfig):
         self.cfg = cfg
@@ -47,8 +43,7 @@ class FrameSelector(IFrameSelector):
         self._capture_thread: Optional[threading.Thread] = None
         self._batch_thread: Optional[threading.Thread] = None
 
-        # Step 3: frame selection sampler (time-based downsampling)
-        # NOTE: sampling.py should implement FrameSampler.should_select(ts: float) -> bool
+        # frame selection sampler (time-based downsampling)
         self._sampler = FrameSampler(target_fps=self.cfg.target_fps)
 
         # counters
@@ -105,7 +100,7 @@ class FrameSelector(IFrameSelector):
             selected_fps_est=self._selected_fps_est,
             ring_size=len(self._ring),
             batch_queue_size=self._batch_q.qsize(),
-            dropped_frames=self._ring.dropped_count(),  # requires Step 4 update in buffer.py
+            dropped_frames=self._ring.dropped_count(),  
             dropped_batches=self._dropped_batches,
         )
 
@@ -128,7 +123,7 @@ class FrameSelector(IFrameSelector):
     def _capture_loop(self) -> None:
         assert self._cap is not None
 
-        # Best-effort buffering reduction to reduce latency
+        # buffering reduction to reduce latency
         try:
             self._cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         except Exception:
@@ -154,7 +149,7 @@ class FrameSelector(IFrameSelector):
 
             now = time.time()
 
-            # 1) Capture FPS (EVERY frame read)
+            # Capture FPS (EVERY frame read)
             self._cap_fps_frames += 1
             if self._cap_fps_last_ts == 0.0:
                 self._cap_fps_last_ts = now
@@ -164,13 +159,12 @@ class FrameSelector(IFrameSelector):
                 self._cap_fps_frames = 0
                 self._cap_fps_last_ts = now
 
-            # 2) Frame Selection (Step 3) — only push selected frames to ring
+            # Frame Selection — only push selected frames to ring
             if not self._sampler.should_select(ts):
-                # still log periodically so you can see capture_fps even if selection is strict
                 self._maybe_log_status()
                 continue
 
-            # 3) Selected FPS (ONLY selected frames)
+            # Selected FPS (ONLY selected frames)
             self._sel_fps_frames += 1
             if self._sel_fps_last_ts == 0.0:
                 self._sel_fps_last_ts = now
@@ -180,7 +174,7 @@ class FrameSelector(IFrameSelector):
                 self._sel_fps_frames = 0
                 self._sel_fps_last_ts = now
 
-            # 4) Create packet + push to ring buffer (bounded, drop-oldest)
+            # Create packet + push to ring buffer (bounded, drop-oldest)
             pkt = FramePacket(
                 frame_id=self._frame_id,
                 timestamp=ts,
@@ -193,12 +187,11 @@ class FrameSelector(IFrameSelector):
             self._maybe_log_status()
 
     def _batch_loop(self) -> None:
-        """
-        Build clip batches from the most recent frames in the ring buffer.
-        Sliding window:
-          - take last clip_len frames
-          - only emit a new batch if start frame advanced by at least stride
-        """
+        # Build clip batches from the most recent frames in the ring buffer.
+        # Sliding window:
+        #   - take last clip_len frames
+        #   - only emit a new batch if start frame advanced by at least stride
+        
         clip_len = self.cfg.clip_len
         stride = self.cfg.stride
 
@@ -233,7 +226,6 @@ class FrameSelector(IFrameSelector):
             if dropped_oldest:
                 self._dropped_batches += 1
 
-            # if push somehow fails, count it too
             if not pushed:
                 self._dropped_batches += 1
             else:

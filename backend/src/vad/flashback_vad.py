@@ -1,19 +1,14 @@
 from __future__ import annotations
-
 import os
 from dataclasses import dataclass
 from typing import Optional, Any, Dict, List, Tuple
-
 import cv2
 import numpy as np
 import torch
 import torch.nn.functional as F
-
 from imagebind.models import imagebind_model
 from imagebind.models.imagebind_model import ModalityType
-
 from ..frame_selector.types import ClipBatch
-
 
 @dataclass(frozen=True)
 class VADOutput:
@@ -21,22 +16,14 @@ class VADOutput:
     ts_start: float
     ts_end: float
     label: str               # "normal" or "anomaly"
-    confidence: float        # raw anomaly score (0..1)
+    confidence: float       
     top_caption: str
     extra: Dict[str, Any]
 
-
-# Cache so model/memory load once per process (equivalent to Streamlit cache_resource)
 _MODEL_CACHE: Dict[str, torch.nn.Module] = {}
 _MEMORY_CACHE: Dict[Tuple[str, str], Tuple[torch.Tensor, torch.Tensor, List[str]]] = {}
 
-
 class FlashbackVAD:
-    """
-    Sponsor-style Flashback/ImageBind VAD logic (without Streamlit UI).
-    - Uses the same scoring math + threshold decision as sponsor
-    - Reads memory from THESIS/src/memory/
-    """
 
     def __init__(
         self,
@@ -49,7 +36,6 @@ class FlashbackVAD:
         self.top_k = int(top_k)
         self.anomaly_threshold = float(anomaly_threshold)
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
-
         self._model = self._get_or_load_model()
         self._text_emb, self._labels, self._captions = self._get_or_load_memory()
 
@@ -63,7 +49,6 @@ class FlashbackVAD:
         )
 
     # ---------------- paths / loading ----------------
-
     def _memory_paths(self) -> Tuple[str, str]:
         mem_dir = os.path.join(self.thesis_root, "src", "memory")
         emb_path = os.path.join(mem_dir, "flashback_text_embeddings_SAP.npy")
@@ -78,7 +63,8 @@ class FlashbackVAD:
         model = imagebind_model.imagebind_huge(pretrained=True)
         model.eval().to(self.device)
 
-        # sponsor uses half precision on CUDA
+        # CUDA(Compute Unified Device Architecture) 
+        #       - a NVIDIA platform that let's the program use the GPU instead of the CPU for heavy computation.
         if self.device == "cuda":
             model.half()
 
@@ -109,7 +95,6 @@ class FlashbackVAD:
         if emb_np.ndim != 2:
             raise ValueError(f"Embeddings must be 2D (N,D). Got {emb_np.shape}")
 
-        # sponsor: float32 -> normalize -> half if cuda
         text_emb = torch.tensor(emb_np, dtype=torch.float32, device=self.device)
         text_emb = F.normalize(text_emb, p=2, dim=-1)
         if self.device == "cuda":
@@ -118,7 +103,6 @@ class FlashbackVAD:
         n_total = text_emb.shape[0]
         half = n_total // 2
 
-        # sponsor logic: first half normal, second half anomalous
         y_labels = torch.zeros(n_total, device=self.device)
         y_labels[half:] = 1.0
 
@@ -135,17 +119,8 @@ class FlashbackVAD:
         print("[VAD] Memory loaded (cached).")
         return text_emb, y_labels, captions
 
-    # ---------------- sponsor scoring ----------------
-
     def _compute_anomaly_score(self, video_emb: torch.Tensor) -> Tuple[float, str, Dict[str, Any]]:
-        """
-        Sponsor math:
-          scores = video_emb @ text_emb.T
-          topk
-          weights = softmax(topk_vals)
-          anomaly_score = sum(weights * labels)
-          top_caption = captions[topk_idx[0]]
-        """
+      
         scores = torch.matmul(video_emb, self._text_emb.T)  # (1, N)
         topk_vals, topk_idx = torch.topk(scores, k=self.top_k, dim=-1)
 
@@ -164,18 +139,10 @@ class FlashbackVAD:
         return float(anomaly_score), top_caption, debug
 
     def predict(self, batch: ClipBatch) -> VADOutput:
-        """
-        Sponsor runs on single frames from webcam.
-        We do the same: pick ONE frame from the batch (middle frame).
-        """
 
         mid = len(batch.frames) // 2
         frame_bgr = batch.frames[mid].frame_bgr  # (H,W,3) BGR (already resized by selector)
 
-        # Sponsor-style preprocessing:
-        # - resize to 224x224
-        # - BGR -> RGB
-        # - float32 / 255
         model_input = cv2.resize(frame_bgr, (224, 224))
         rgb = cv2.cvtColor(model_input, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
 
@@ -190,7 +157,6 @@ class FlashbackVAD:
 
         raw_score, top_caption, dbg = self._compute_anomaly_score(video_emb)
 
-        # Sponsor-style decision rule (NO smoothing)
         label = "anomaly" if raw_score >= self.anomaly_threshold else "normal"
 
         return VADOutput(

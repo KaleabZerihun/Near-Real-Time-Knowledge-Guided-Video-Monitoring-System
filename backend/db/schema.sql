@@ -31,6 +31,65 @@ CREATE INDEX IF NOT EXISTS idx_detections_camera_time
 CREATE INDEX IF NOT EXISTS idx_detections_event_type
   ON detections(event_type);
 
+CREATE TABLE IF NOT EXISTS frame_batches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  clip_id INTEGER NOT NULL UNIQUE,
+  stream_id TEXT NOT NULL,
+  ts_start REAL NOT NULL,
+  ts_end REAL NOT NULL,
+  fps REAL,
+  frames_json TEXT NOT NULL,
+  created_at REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS vad_predictions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  clip_id INTEGER NOT NULL UNIQUE,
+  stream_id TEXT NOT NULL,
+  ts_start REAL NOT NULL,
+  ts_end REAL NOT NULL,
+  label TEXT,
+  confidence REAL,
+  extra_json TEXT NOT NULL,
+  created_at REAL NOT NULL,
+  FOREIGN KEY (clip_id) REFERENCES frame_batches(clip_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  clip_id INTEGER NOT NULL UNIQUE,
+  stream_id TEXT NOT NULL,
+  ts_start REAL NOT NULL,
+  ts_end REAL NOT NULL,
+  label TEXT,
+  confidence REAL,
+  frames_json TEXT NOT NULL,
+  vad_json TEXT NOT NULL,
+  created_at REAL NOT NULL,
+  FOREIGN KEY (clip_id) REFERENCES frame_batches(clip_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS events_archive (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  clip_id INTEGER NOT NULL UNIQUE,
+  stream_id TEXT NOT NULL,
+  ts_start REAL NOT NULL,
+  ts_end REAL NOT NULL,
+  label TEXT,
+  confidence REAL,
+  frames_json TEXT NOT NULL,
+  vad_json TEXT NOT NULL,
+  created_at REAL NOT NULL,
+  archived_at REAL NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_events_archive_stream_id ON events_archive(stream_id);
+CREATE INDEX IF NOT EXISTS idx_events_archive_created_at ON events_archive(created_at);
+
+CREATE INDEX IF NOT EXISTS idx_frame_batches_stream_time ON frame_batches(stream_id, ts_start);
+CREATE INDEX IF NOT EXISTS idx_vad_predictions_stream_time ON vad_predictions(stream_id, ts_start);
+CREATE INDEX IF NOT EXISTS idx_events_stream_time ON events(stream_id, ts_start);
+
 CREATE TABLE IF NOT EXISTS alerts (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   detection_id INTEGER NOT NULL,
