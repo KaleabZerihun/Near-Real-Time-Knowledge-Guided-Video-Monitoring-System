@@ -221,6 +221,9 @@ def video_mjpeg(request: Request):
         gen(),
         media_type=f"multipart/x-mixed-replace; boundary={boundary}",
     )
+@router.get("/events")
+def get_events():
+    return list_events_from_db()
 
 @router.post("/dev/inject_alert")
 def inject_alert(
