@@ -2,7 +2,7 @@ import time
 import cv2
 import pytest
 
-from tests.conftest import FakeVideoCapture
+from backup.conftest import FakeVideoCapture
 from src.frame_selector.config import FrameSelectorConfig
 from src.frame_selector.runtime_selector import FrameSelector
 
@@ -10,7 +10,7 @@ from src.frame_selector.runtime_selector import FrameSelector
 @pytest.mark.timeout(10)
 def test_frame_selector_batches_and_limits(monkeypatch):
     # monkeypatch cv2.VideoCapture to return fake camera
-    monkeypatch.setattr(cv2, "VideoCapture", lambda *_args, **_kwargs: FakeVideoCapture(fps=30))
+    monkeypatch.setattr(cv2, "VideoCapture", lambda *_args, **_kwargs: FakeVideoCapture())
 
     cfg = FrameSelectorConfig(
         source=0,

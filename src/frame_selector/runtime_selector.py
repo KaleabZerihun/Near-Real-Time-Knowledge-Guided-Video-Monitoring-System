@@ -67,7 +67,7 @@ class FrameSelector(IFrameSelector):
     # ------------------ public API ------------------
 
     def start(self) -> None:
-        self._cap = cv2.VideoCapture(self.cfg.source)
+        self._cap = cv2.VideoCapture(self.cfg.source or 0)
         if not self._cap.isOpened():
             raise RuntimeError(f"Could not open video source: {self.cfg.source}")
 
