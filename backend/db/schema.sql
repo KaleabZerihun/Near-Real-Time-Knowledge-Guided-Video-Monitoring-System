@@ -117,3 +117,28 @@ CREATE TABLE IF NOT EXISTS system_metrics (
 
 CREATE INDEX IF NOT EXISTS idx_metrics_time
   ON system_metrics(recorded_at);
+
+-- Per-clip performance metrics: one row per processed clip/batch
+CREATE TABLE IF NOT EXISTS clip_metrics (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  clip_id           INTEGER NOT NULL,
+  stream_id         TEXT    NOT NULL,
+  recorded_at       REAL    NOT NULL,   -- unix timestamp
+  vad_inference_ms  REAL    NOT NULL,   -- time spent inside VAD.predict()
+  kg_inference_ms   REAL    NOT NULL,   -- time spent inside KG.augment()
+  db_write_ms       REAL    NOT NULL,   -- time spent persisting to DB
+  e2e_latency_ms    REAL    NOT NULL,   -- clip ts_start → result ready
+  label             TEXT,               -- "normal" | "anomaly"
+  confidence        REAL,               -- VAD confidence 0-1
+  capture_fps       REAL,               -- camera capture FPS at time of clip
+  selected_fps      REAL,               -- frame-selector output FPS
+  queue_depth       INTEGER,            -- batch queue depth at time of clip
+  dropped_frames    INTEGER,            -- cumulative dropped frames
+  dropped_batches   INTEGER,            -- cumulative dropped batches
+  is_anomaly        INTEGER NOT NULL DEFAULT 0  -- 1 if label == "anomaly"
+);
+
+CREATE INDEX IF NOT EXISTS idx_clip_metrics_recorded_at
+  ON clip_metrics(recorded_at);
+CREATE INDEX IF NOT EXISTS idx_clip_metrics_clip_id
+  ON clip_metrics(clip_id);

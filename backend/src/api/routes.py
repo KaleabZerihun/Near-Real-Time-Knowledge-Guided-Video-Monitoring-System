@@ -11,6 +11,8 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from src.events.schemas import FramesIngest, VadIngest
 from src.events import service as events_service
+from src.db import repository as db_repo
+from src.metrics import persistence as metrics_persistence
 
 router = APIRouter()
 
@@ -231,8 +233,48 @@ def video_mjpeg(request: Request):
         media_type=f"multipart/x-mixed-replace; boundary={boundary}",
     )
 @router.get("/events")
-def get_events():
-    return list_events_from_db()
+def get_events(limit: int = Query(100, ge=1, le=2000)):
+    return {"events": db_repo.list_events(limit=limit)}
+
+
+@router.get("/metrics/summary")
+def metrics_summary(request: Request, last_n: int = Query(300, ge=1, le=2000)):
+    """
+    Aggregate performance summary over the last N processed clips.
+    Uses the in-memory tracker (fast, no DB query needed).
+    """
+    runner = request.app.state.runner
+    if not runner:
+        return JSONResponse({"error": "runner not started"}, status_code=503)
+
+    summary = runner.performance_summary(last_n=last_n)
+    if summary is None:
+        return JSONResponse({"status": "no_data_yet"}, status_code=200)
+    return summary
+
+
+@router.get("/metrics/history")
+def metrics_history(
+    request: Request,
+    limit: int = Query(300, ge=1, le=2000),
+    source: str = Query("memory", description="'memory' (in-process) or 'db' (persisted)"),
+):
+    """
+    Per-clip performance records. Use source=db to query persisted history
+    that survives server restarts.
+    """
+    runner = request.app.state.runner
+
+    if source == "db":
+        # Always available even if runner is not active
+        rows = metrics_persistence.list_clip_metrics(limit=limit)
+        return {"source": "db", "count": len(rows), "records": rows}
+
+    if not runner:
+        return JSONResponse({"error": "runner not started"}, status_code=503)
+
+    rows = runner.performance_history(limit=limit)
+    return {"source": "memory", "count": len(rows), "records": rows}
 
 @router.post("/dev/inject_alert")
 def inject_alert(

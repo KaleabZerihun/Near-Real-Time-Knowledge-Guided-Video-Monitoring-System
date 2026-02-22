@@ -174,6 +174,33 @@ def insert_event_if_missing(
 
         return cur.lastrowid
 
+def list_events(limit: int = 100) -> list[dict[str, Any]]:
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, clip_id, stream_id, ts_start, ts_end, label, confidence, vad_json, created_at
+            FROM events
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+    return [
+        {
+            "id": r[0],
+            "clip_id": r[1],
+            "stream_id": r[2],
+            "ts_start": r[3],
+            "ts_end": r[4],
+            "label": r[5],
+            "confidence": r[6],
+            "vad": json.loads(r[7]),
+            "created_at": r[8],
+        }
+        for r in rows
+    ]
+
 def get_event_by_clip_id(clip_id: int) -> Optional[dict[str, Any]]:
     with _connect() as conn:
         row = conn.execute(
