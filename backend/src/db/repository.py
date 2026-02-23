@@ -199,3 +199,31 @@ def get_event_by_clip_id(clip_id: int) -> Optional[dict[str, Any]]:
         "vad": json.loads(row[8]),
         "created_at": row[9],
     }
+
+def get_recent_events(limit: int = 5) -> list[dict[str, Any]]:
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT id, clip_id, stream_id, ts_start, ts_end, label, confidence, frames_json, vad_json, created_at
+            FROM events
+            ORDER BY created_at DESC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+
+    events = []
+    for row in rows:
+        events.append({
+            "id": row[0],
+            "clip_id": row[1],
+            "stream_id": row[2],
+            "ts_start": row[3],
+            "ts_end": row[4],
+            "label": row[5],
+            "confidence": row[6],
+            "frames": json.loads(row[7]),
+            "vad": json.loads(row[8]),
+            "created_at": row[9],
+        })
+    return events

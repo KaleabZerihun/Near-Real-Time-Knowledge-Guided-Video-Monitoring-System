@@ -170,6 +170,16 @@ def pipeline_history(request: Request, limit: int = Query(300, ge=1, le=2000)):
     return {"points": runner.confidence_history(limit=limit)}
 
 
+@router.get("/events/recent")
+def recent_events(limit: int = Query(5, ge=1, le=100)):
+    from src.db import repository
+    try:
+        events = repository.get_recent_events(limit=limit)
+        return {"events": events}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
 @router.get("/alerts")
 def alerts(request: Request):
     runner = request.app.state.runner

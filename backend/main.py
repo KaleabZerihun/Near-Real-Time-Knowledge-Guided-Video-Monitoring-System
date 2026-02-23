@@ -119,6 +119,12 @@ def dashboard():
       .toast.meta { font-size: 11px; color: dark grey; margin-top: 6px; }
 
       canvas { width: 720px; max-width: 100%; height: 240px; border: 1px solid #eee; border-radius: 10px; }
+      .event-item { padding: 10px; border-bottom: 1px solid #f0f0f0; background: #fafafa; margin-bottom: 4px; border-radius: 6px; font-size: 13px; }
+      .event-item:last-child { border-bottom: none; }
+      .event-time { color: #666; font-size: 11px; }
+      .event-label { font-weight: 600; color: #1f77b4; }
+      .event-confidence { color: #d62728; font-weight: 600; }
+      .event-clip { color: #999; font-size: 11px; }
     </style>
   </head>
   <body>
@@ -152,6 +158,14 @@ def dashboard():
         <h3>Overtime Performance VAD Only(Confidence vs Time)</h3>
         <div class="muted" style="margin-bottom:8px;">X-axis = time, Y-axis = VAD confidence</div>
         <canvas id="perfChart" width="720" height="240"></canvas>
+      </div>
+
+      <div class="card">
+        <h3>Recent Events</h3>
+        <div class="muted" style="margin-bottom: 8px;">Last 5 Anomalies</div>
+        <div id="eventsContainer" style="max-height: 400px; overflow-y: auto;">
+          <div style="color: black; text-align: center; padding: 20px;">No events yet...</div>
+        </div>
       </div>
     </div>
 
@@ -191,6 +205,45 @@ def dashboard():
         if (!Number.isFinite(t) || !Number.isFinite(confidence)) return;
         points.push({ t, confidence });
         while (points.length > MAX_POINTS) points.shift();
+      }
+
+      // Store recent logger events/alerts
+      const loggerEvents = [];
+      const MAX_LOGGER_EVENTS = 5;
+
+      function pushLoggerEvent(alert) {
+        if (!alert || !alert.ts || !alert.message) return;
+        loggerEvents.unshift({
+          id: alert.id || Math.random(),
+          ts: alert.ts,
+          source: alert.source || "unknown",
+          severity: alert.severity || "info",
+          message: alert.message,
+        });
+        while (loggerEvents.length > MAX_LOGGER_EVENTS) loggerEvents.pop();
+        updateEventsDisplay();
+      }
+
+      function updateEventsDisplay() {
+        const container = document.getElementById("eventsContainer");
+        if (loggerEvents.length === 0) {
+          container.innerHTML = '<div style="color: black; text-align: center; padding: 20px;">No events yet...</div>';
+          return;
+        }
+        
+        container.innerHTML = "";
+        loggerEvents.forEach(evt => {
+          const time = new Date(evt.ts * 1000).toLocaleTimeString();
+          const severityColor = evt.severity === "critical" ? "#d62728" : evt.severity === "warning" ? "#ff7f0e" : "#1f77b4";
+          const item = document.createElement("div");
+          item.className = "event-item";
+          item.innerHTML = `
+            <div><span class="event-label" style="color: ${severityColor}">${evt.severity.toUpperCase()}</span> <span style="color: #666; font-size: 12px;">${evt.source}</span></div>
+            <div style="margin: 4px 0;">${evt.message}</div>
+            <div class="event-time">${time}</div>
+          `;
+          container.appendChild(item);
+        });
       }
 
       function drawChart() {
@@ -294,7 +347,7 @@ def dashboard():
           img.style.display = "block";
           img.src = "/video/mjpeg";
 
-          // Load initial overtime points
+      // Load initial overtime points
           try {
             const histRes = await fetch("/pipeline/history?limit=300");
             const hist = await histRes.json();
@@ -306,6 +359,8 @@ def dashboard():
             // ignore
             drawChart();
           }
+
+          updateEventsDisplay();
 
           const es = new EventSource("/pipeline/stream");
           es.onopen = () => {
@@ -328,7 +383,10 @@ def dashboard():
               }
 
               if (obj.alerts && obj.alerts.length) {
-                obj.alerts.forEach(a => showToast(a));
+                obj.alerts.forEach(a => {
+                  showToast(a);
+                  pushLoggerEvent(a);
+                });
               }
             } catch {
               pre.textContent = e.data;
@@ -336,7 +394,7 @@ def dashboard():
           };
 
           es.onerror = () => {
-          if (badge) badge.textContent = "VAD: SSE disconnected — refresh page";
+            if (badge) badge.textContent = "VAD: SSE disconnected — refresh page";
             pre.textContent = JSON.stringify({ error: "SSE disconnected — refresh page" }, null, 2);
             try { es.close(); } catch {}
           };
