@@ -5,8 +5,9 @@ import sys
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, Response
+from fastapi.responses import HTMLResponse, Response, FileResponse
 from dotenv import load_dotenv
+from fastapi.staticfiles import StaticFiles
 
 # Ensure `src.*` imports work when running from repo root or backend/
 THIS_DIR = Path(__file__).resolve().parent  # .../backend
@@ -25,6 +26,13 @@ except ModuleNotFoundError as e:
     print(f"[WARN] PipelineRunner disabled (missing dependency): {e}")
 
 app = FastAPI(title="Near Real-Time Knowledge-Guided Video Monitoring")
+
+repo_root = THIS_DIR.parent
+img_dir = repo_root / "images"
+if img_dir.exists():
+    app.mount("/images", StaticFiles(directory=str(img_dir)), name="images")
+else:
+    print(f"[WARN] images directory not found at {img_dir}")
 
 runner = None  # PipelineRunner | None (kept untyped for when PipelineRunner is None)
 
@@ -86,7 +94,9 @@ def status():
 
 @app.get("/favicon.ico")
 def favicon():
-    """Avoid 404 spam in logs."""
+    icon_path = img_dir / "CameraEye.png"
+    if icon_path.exists():
+        return FileResponse(str(icon_path), media_type="image/png")
     return Response(status_code=204)
 
 
@@ -100,6 +110,7 @@ def dashboard():
   <head>
     <meta charset="utf-8" />
     <title>Dashboard</title>
+    <link rel="icon" type="image/png" href="/favicon.ico" />
     <style>
       body { font-family: Arial, sans-serif; margin: 18px; }
       .row { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
