@@ -155,14 +155,22 @@ def dashboard():
       </div>
 
       <div class="card">
-        <h3>Overtime Performance VAD Only(Confidence vs Time)</h3>
+        <h3>Overtime Performance VAD Only (Confidence vs Time)</h3>
+
+        <!-- haaaaaaaaaaaaaaaaaaaaaaa -->
+        <div class="muted" id="avgLine" style="margin-bottom:8px;">
+          Rolling average: waiting...
+        </div>
+        <!-- jaaaaaaaaaaaaaaaaaaaaaaaaaaaa -->
+
         <div class="muted" style="margin-bottom:8px;">X-axis = time, Y-axis = VAD confidence</div>
+        <div class="muted" style="margin-bottom:8px;">blue = confidence vs time, green = rolling average</div>
         <canvas id="perfChart" width="720" height="240"></canvas>
       </div>
 
       <div class="card">
         <h3>Recent Events</h3>
-        <div class="muted" style="margin-bottom: 8px;">Last 5 Anomalies</div>
+        <div class="muted" style="margin-bottom: 8px;">Last 5 Alerts</div>
         <div id="eventsContainer" style="max-height: 400px; overflow-y: auto;">
           <div style="color: black; text-align: center; padding: 20px;">No events yet...</div>
         </div>
@@ -174,6 +182,11 @@ def dashboard():
       const warn = document.getElementById("pipelineWarn");
       const img = document.getElementById("videoImg");
       const badge = document.getElementById("vadBadge");
+
+      // haaaaaaaaaaaaaaaaaaaaaaa
+      const avgText = document.getElementById("avgLine");
+      const AVG_WINDOW = 10; // average of last 10 VAD outputs
+      // jaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
       const toastContainer = document.createElement('div');
       toastContainer.id = 'toasts';
@@ -193,7 +206,6 @@ def dashboard():
       }
 
       // ---------------- Overtime graph (canvas) ----------------
-      // thissssssssssssssssssssss isssssssssssssss ittttttttttttttttttttttt
       const canvas = document.getElementById("perfChart");
       const ctx = canvas ? canvas.getContext("2d") : null;
 
@@ -206,6 +218,38 @@ def dashboard():
         points.push({ t, confidence });
         while (points.length > MAX_POINTS) points.shift();
       }
+
+      // haaaaaaaaaaaaaaaaaaaaaaa
+      // Compute rolling average for the last N points (N = AVG_WINDOW)
+      function rollingAvgLastN(n) {
+        const k = Math.max(1, Math.min(points.length, n));
+        if (points.length === 0) return null;
+
+        let sum = 0;
+        for (let i = points.length - k; i < points.length; i++) {
+          sum += points[i].confidence;
+        }
+        return sum / k;
+      }
+
+      // Build an array of rolling-average points aligned with `points`
+      function buildRollingAvgSeries(n) {
+        const series = [];
+        const k = Math.max(1, n);
+
+        for (let i = 0; i < points.length; i++) {
+          const start = Math.max(0, i - k + 1);
+          let sum = 0;
+          let count = 0;
+          for (let j = start; j <= i; j++) {
+            sum += points[j].confidence;
+            count += 1;
+          }
+          series.push({ t: points[i].t, confidence: sum / count });
+        }
+        return series;
+      }
+      // jaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
       // Store recent logger events/alerts
       const loggerEvents = [];
@@ -230,7 +274,7 @@ def dashboard():
           container.innerHTML = '<div style="color: black; text-align: center; padding: 20px;">No events yet...</div>';
           return;
         }
-        
+
         container.innerHTML = "";
         loggerEvents.forEach(evt => {
           const time = new Date(evt.ts * 1000).toLocaleTimeString();
@@ -247,19 +291,17 @@ def dashboard():
       }
 
       function drawChart() {
-        // clear
+        if (!ctx || !canvas) return;
+
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // background
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // axes area
         const padL = 52, padR = 12, padT = 10, padB = 26;
         const w = canvas.width - padL - padR;
         const h = canvas.height - padT - padB;
 
-        // axis lines
         ctx.strokeStyle = "#cccccc";
         ctx.lineWidth = 1;
         ctx.beginPath();
@@ -268,7 +310,6 @@ def dashboard():
         ctx.lineTo(padL + w, padT + h);
         ctx.stroke();
 
-        // y labels (0, 0.5, 1.0)
         ctx.fillStyle = "#333333";
         ctx.font = "12px Arial";
         const yTicks = [0, 0.5, 1.0];
@@ -294,14 +335,13 @@ def dashboard():
         const tMax = points[points.length - 1].t;
         const tSpan = Math.max(1e-6, tMax - tMin);
 
-        // x labels: left + right time
         const leftLabel = new Date(tMin * 1000).toLocaleTimeString();
         const rightLabel = new Date(tMax * 1000).toLocaleTimeString();
         ctx.fillStyle = "#333333";
         ctx.fillText(leftLabel, padL, padT + h + 18);
         ctx.fillText(rightLabel, padL + w - ctx.measureText(rightLabel).width, padT + h + 18);
 
-        // line plot
+        // Raw confidence line
         ctx.strokeStyle = "#1f77b4";
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -314,7 +354,30 @@ def dashboard():
         }
         ctx.stroke();
 
-        // latest dot
+        // haaaaaaaaaaaaaaaaaaaaaaa
+        // Rolling average line (smoother)
+        const avgSeries = buildRollingAvgSeries(AVG_WINDOW);
+        ctx.strokeStyle = "#2ca02c";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let i = 0; i < avgSeries.length; i++) {
+          const p = avgSeries[i];
+          const x = padL + ((p.t - tMin) / tSpan) * w;
+          const y = padT + (1 - Math.max(0, Math.min(1, p.confidence))) * h;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        // Update average text
+        const avgNow = rollingAvgLastN(AVG_WINDOW);
+        if (avgText) {
+          if (avgNow === null) avgText.textContent = "Rolling average: waiting...";
+          else avgText.textContent = `Rolling average (last ${AVG_WINDOW}): ${avgNow.toFixed(3)}`;
+        }
+        // jaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+
+        // latest dot (raw)
         const last = points[points.length - 1];
         const xLast = padL + ((last.t - tMin) / tSpan) * w;
         const yLast = padT + (1 - Math.max(0, Math.min(1, last.confidence))) * h;
@@ -323,18 +386,16 @@ def dashboard():
         ctx.arc(xLast, yLast, 4, 0, Math.PI * 2);
         ctx.fill();
 
-        // latest value text
         ctx.fillStyle = "#111";
         ctx.fillText(`latest: ${last.confidence.toFixed(3)}`, padL + 10, padT + 18);
       }
-      // YAAAAAAAAAAAAAAAPPPPPPPPPPPPP
-      // --------------------------------------------------------
 
       fetch("/status")
         .then(r => r.json())
         .then(async (s) => {
           if (!s.pipeline_enabled) {
-          if (badge) badge.textContent = "VAD: pipeline disabled";
+            if (badge) badge.textContent = "VAD: pipeline disabled";
+            if (avgText) avgText.textContent = "Rolling average: pipeline disabled";
             warn.style.display = "block";
             pre.textContent = JSON.stringify({ status: "pipeline_disabled" }, null, 2);
             img.style.display = "none";
@@ -342,34 +403,37 @@ def dashboard():
             return;
           }
 
-          // Pipeline is enabled: now it's safe to call endpoints
           warn.style.display = "none";
           img.style.display = "block";
           img.src = "/video/mjpeg";
 
-      // Load initial overtime points
+          // Load initial overtime points
           try {
             const histRes = await fetch("/pipeline/history?limit=300");
             const hist = await histRes.json();
             if (hist.points && Array.isArray(hist.points)) {
               hist.points.forEach(p => pushPoint(p.t, p.confidence));
               drawChart();
+            } else {
+              drawChart();
             }
           } catch (e) {
-            // ignore
             drawChart();
           }
 
           updateEventsDisplay();
 
           const es = new EventSource("/pipeline/stream");
+
           es.onopen = () => {
             if (badge) badge.textContent = "VAD: SSE connected...";
           };
+
           es.onmessage = (e) => {
             try {
               const obj = JSON.parse(e.data);
               pre.textContent = JSON.stringify(obj, null, 2);
+
               if (badge && obj && obj.vad) {
                 const label = String(obj.vad.label || "").toUpperCase();
                 const conf = (typeof obj.vad.confidence === "number") ? obj.vad.confidence.toFixed(3) : "N/A";
@@ -395,6 +459,7 @@ def dashboard():
 
           es.onerror = () => {
             if (badge) badge.textContent = "VAD: SSE disconnected — refresh page";
+            if (avgText) avgText.textContent = "Rolling average: SSE disconnected";
             pre.textContent = JSON.stringify({ error: "SSE disconnected — refresh page" }, null, 2);
             try { es.close(); } catch {}
           };
@@ -403,6 +468,7 @@ def dashboard():
           warn.style.display = "block";
           pre.textContent = JSON.stringify({ error: "status check failed" }, null, 2);
           img.style.display = "none";
+          if (avgText) avgText.textContent = "Rolling average: status check failed";
           drawChart();
         });
     </script>
