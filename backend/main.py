@@ -448,7 +448,10 @@ def dashboard():
               if (badge && obj && obj.vad) {
                 const label = String(obj.vad.label || "").toUpperCase();
                 const conf = (typeof obj.vad.confidence === "number") ? obj.vad.confidence.toFixed(3) : "N/A";
-                badge.textContent = `VAD: ${label} | confidence: ${conf}`;
+                const capRaw = obj.vad.top_caption ? String(obj.vad.top_caption) : "";
+                const cap = capRaw ? capRaw.slice(0, 60) : "N/A"; // limit length so it doesn't get huge
+
+                badge.textContent = `VAD: ${label} | confidence: ${conf} | caption: ${cap}`;
               }
 
               // Update graph in real-time from SSE payload
