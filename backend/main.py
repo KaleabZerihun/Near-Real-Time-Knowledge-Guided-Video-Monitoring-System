@@ -99,7 +99,6 @@ def favicon():
         return FileResponse(str(icon_path), media_type="image/png")
     return Response(status_code=204)
 
-
 # Give API router access to the runner via app.state
 @app.middleware("http")
 async def attach_runner(request, call_next):
