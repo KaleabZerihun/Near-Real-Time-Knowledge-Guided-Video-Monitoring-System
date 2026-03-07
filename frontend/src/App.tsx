@@ -255,7 +255,8 @@ function App() {
                 typeof obj.vad.confidence === 'number'
                   ? obj.vad.confidence.toFixed(3)
                   : 'N/A'
-              setVadStatus(`VAD: ${label} | confidence: ${conf}`)
+                const cap = obj.vad.top_caption ? String(obj.vad.top_caption).slice(0, 60) : 'N/A'
+              setVadStatus(`VAD: ${label} | confidence: ${conf} | caption: ${cap}`)
             }
 
             if (obj && obj.updated_at && obj.vad && typeof obj.vad.confidence === 'number') {
