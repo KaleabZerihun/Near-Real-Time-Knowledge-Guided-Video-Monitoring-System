@@ -116,7 +116,7 @@ function App() {
     if (!ctx) return
 
     ctx.clearRect(0, 0, canvas.width, canvas.height)
-    ctx.fillStyle = '#ffffff'
+    ctx.fillStyle = '#f2e8f8'
     ctx.fillRect(0, 0, canvas.width, canvas.height)
 
     const padL = 52,

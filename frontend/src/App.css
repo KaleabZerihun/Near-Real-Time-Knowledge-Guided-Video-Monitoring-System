@@ -4,10 +4,11 @@
   padding: 0;
   /*purpleish off-white background*/
   background-color: #f6f3fe;
+  font-family: 'Ubuntu', sans-serif;
 }
 
 .app-container {
-  font-family: Arial, sans-serif;
+  font-family: 'Ubuntu', sans-serif;
 }
 
 .row {
@@ -96,7 +97,7 @@ code {
   min-width: 260px;
   max-width: 360px;
   pointer-events: auto;
-  background: #fff;
+  background: #f2e8f8;
   color: #111;
   padding: 10px 12px;
   border-radius: 8px;
@@ -145,12 +146,13 @@ canvas {
   height: 240px;
   border: 1px solid #eee;
   border-radius: 10px;
+  color: #f2e8f8;
 }
 
 .event-item {
   padding: 10px;
-  border-bottom: 1px solid #f0f0f0;
-  background: #fafafa;
+  border-bottom: 1px solid #b0b0b0;
+  background: #f2e8f8;
   margin-bottom: 4px;
   border-radius: 6px;
   font-size: 13px;
@@ -184,7 +186,7 @@ canvas {
   padding: 8px 10px;
   border: 1px solid #eee;
   border-radius: 10px;
-  background: #fafafa;
+  background: #f2e8f8;
   font-weight: 700;
 }
 
