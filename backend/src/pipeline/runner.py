@@ -5,6 +5,8 @@ import time
 from typing import Optional, Dict, Any, Tuple
 
 import cv2
+from src.db import repository
+from datetime import datetime, timezone
 from collections import deque
 
 from src.frame_selector.runtime_selector import FrameSelector
@@ -24,7 +26,7 @@ class PipelineRunner:
 
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
-
+        self._run_id: int | None = None
         self._lock = threading.Lock()
         self._latest_payload: Optional[Dict[str, Any]] = None
         self._latest_frame_bgr = None
@@ -35,6 +37,11 @@ class PipelineRunner:
         self._confidence_history: deque[Tuple[float, float]] = deque(maxlen=600)
     # run the frame selecor
     def start(self) -> None:
+        self._run_id = repository.create_run(
+            mode="vad+kg",
+            model_version="flashback_vad",
+            notes="PipelineRunner session"
+        )
         self.selector.start()
         self._stop.clear()
         self._thread = threading.Thread(target=self._loop, daemon=True)
@@ -45,6 +52,10 @@ class PipelineRunner:
         if self._thread:
             self._thread.join(timeout=2.0)
         self.selector.stop()
+
+        if self._run_id is not None:
+            repository.finish_run(self._run_id)
+            self._run_id = None
 
     def metrics(self):
         return self.selector.get_metrics()
@@ -127,6 +138,94 @@ class PipelineRunner:
                 "rules_fired": kg_out.rules_fired,
                 "alerts": [a.to_dict() for a in alerts],
             }
+            
+            try:
+                clip_id = int(vad_out.clip_id) if vad_out.clip_id is not None else None
+
+                if clip_id is not None:
+                    frames_data = []
+                    for f in batch.frames:
+                        frames_data.append({
+                            "ts": getattr(f, "ts", None),
+                        })
+
+                    repository.upsert_frame_batch(
+                        clip_id=clip_id,
+                        stream_id="webcam0",
+                        ts_start=float(vad_out.ts_start),
+                        ts_end=float(vad_out.ts_end),
+                        fps=None,
+                        frames=frames_data,
+                    )
+
+                    repository.upsert_vad_prediction(
+                        clip_id=clip_id,
+                        stream_id="webcam0",
+                        ts_start=float(vad_out.ts_start),
+                        ts_end=float(vad_out.ts_end),
+                        label=vad_out.label,
+                        confidence=float(vad_out.confidence) if vad_out.confidence is not None else None,
+                        extra=vad_out.extra or {},
+                    )
+
+                    repository.insert_event_if_missing(
+                        clip_id=clip_id,
+                        stream_id="webcam0",
+                        ts_start=float(vad_out.ts_start),
+                        ts_end=float(vad_out.ts_end),
+                        label=vad_out.label,
+                        confidence=float(vad_out.confidence) if vad_out.confidence is not None else None,
+                        frames=frames_data,
+                        vad={
+                            "clip_id": vad_out.clip_id,
+                            "ts_start": vad_out.ts_start,
+                            "ts_end": vad_out.ts_end,
+                            "label": vad_out.label,
+                            "confidence": vad_out.confidence,
+                            "top_caption": vad_out.top_caption,
+                            "extra": vad_out.extra,
+                        },
+                    )
+
+                detection_id = repository.insert_detection(
+                    run_id=self._run_id,
+                    occurred_at=datetime.now(timezone.utc).isoformat(),
+                    camera_id="webcam0",
+                    event_type=vad_out.label or "unknown",
+                    vad_score=float(vad_out.confidence) if vad_out.confidence is not None else None,
+                    kg_context={
+                        "kg_validated": kg_out.kg_validated,
+                        "explanation": kg_out.explanation,
+                        "rules_fired": kg_out.rules_fired,
+                    },
+                    decision="alerted" if alerts else "logged",
+                )
+
+                for alert in alerts:
+                    severity = "medium"
+                    if hasattr(alert, "severity"):
+                        severity = str(alert.severity).lower()
+                        if severity not in {"low", "medium", "high"}:
+                            severity = "medium"
+
+                    repository.insert_alert(
+                        detection_id=detection_id,
+                        severity=severity,
+                        status="new",
+                        channel="dashboard",
+                    )
+
+                metrics = self.selector.get_metrics()
+                repository.insert_system_metric(
+                    run_id=self._run_id,
+                    inference_ms=None,
+                    fps=getattr(metrics, "selected_fps_est", None),
+                    queue_depth=getattr(metrics, "batch_queue_size", None),
+                    detections_cnt=1 if vad_out.label and vad_out.label.lower() != "normal" else 0,
+                )
+
+            except Exception as e:
+                print(f"[WARN] failed to persist pipeline output: {e}")
 
             # Use a frame from the batch for the video stream, to get vadz
             mid = len(batch.frames) // 2

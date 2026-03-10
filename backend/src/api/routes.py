@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from src.events.schemas import FramesIngest, VadIngest
 from src.events import service as events_service
+from src.db import repository
 
 router = APIRouter()
 
@@ -161,13 +162,23 @@ def pipeline_latest(request: Request):
         "updated_at": latest.get("updated_at"),
     }
 @router.get("/pipeline/history")
-def pipeline_history(request: Request, limit: int = Query(300, ge=1, le=2000)):
-    runner = request.app.state.runner
-    if not runner:
-        return JSONResponse({"error": "runner not started"}, status_code=503)
+def pipeline_history(limit: int = 300):
+    rows = repository.get_recent_detections(limit=limit)
 
-    # Overtime performance data for graph: x=time, y=confidence
-    return {"points": runner.confidence_history(limit=limit)}
+    points = [
+        {
+            "x": row["occurred_at"],
+            "y": row["vad_score"],
+            "label": row["event_type"],
+            "decision": row["decision"],
+            "camera_id": row["camera_id"],
+        }
+        for row in rows
+        if row["vad_score"] is not None
+    ]
+
+    points.reverse()  # optional: oldest -> newest
+    return {"points": points}
 
 
 @router.get("/events/recent")
@@ -241,8 +252,11 @@ def video_mjpeg(request: Request):
         media_type=f"multipart/x-mixed-replace; boundary={boundary}",
     )
 @router.get("/events")
-def get_events():
-    return list_events_from_db()
+def get_events(limit: int = Query(100, ge=1, le=500)):
+    try:
+        return {"events": repository.get_recent_events(limit=limit)}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 @router.post("/dev/inject_alert")
 def inject_alert(
@@ -286,3 +300,39 @@ def inject_alert(
         }
 
     return {"status": "ok", "alert": alert}
+
+@router.get("/detections/recent")
+def recent_detections(limit: int = Query(20, ge=1, le=500)):
+    try:
+        return {"detections": repository.get_recent_detections(limit=limit)}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@router.get("/metrics/recent")
+def recent_metrics(limit: int = Query(50, ge=1, le=500)):
+    try:
+        return {"metrics": repository.get_recent_system_metrics(limit=limit)}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+    
+@router.get("/alerts/recent")
+def recent_alerts(limit: int = Query(20, ge=1, le=500)):
+    try:
+        return {"alerts": repository.get_recent_alerts(limit=limit)}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+    
+@router.get("/db/summary")
+def db_summary():
+    try:
+        return {
+            "runs": repository.count_runs(),
+            "detections": repository.count_detections(),
+            "alerts": repository.count_alerts(),
+            "system_metrics": repository.count_system_metrics(),
+            "events": repository.count_events(),
+            "frame_batches": repository.count_frame_batches(),
+            "vad_predictions": repository.count_vad_predictions(),
+        }
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
