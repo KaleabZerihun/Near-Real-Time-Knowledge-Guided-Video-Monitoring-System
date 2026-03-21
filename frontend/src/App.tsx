@@ -17,11 +17,11 @@ interface LoggerEvent {
   message: string
 }
 
-interface Toast {
+interface LogEntry {
   id: number
+  ts: number
   source: string
   message: string
-  ts: number
   severity: string
 }
 
@@ -31,17 +31,19 @@ function App() {
   const [output, setOutput] = useState<string>('{ "status": "checking_pipeline_status" }')
   const [points, setPoints] = useState<VADPoint[]>([])
   const [loggerEvents, setLoggerEvents] = useState<LoggerEvent[]>([])
-  const [toasts, setToasts] = useState<Toast[]>([])
+  const [allLogs, setAllLogs] = useState<LogEntry[]>([])
   const [avgText, setAvgText] = useState('Rolling average: waiting...')
   
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const logPanelRef = useRef<HTMLDivElement>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
-  const toastCounterRef = useRef(0)
+  const logCounterRef = useRef(0)
   const loggerEventCounterRef = useRef(0)
 
   const AVG_WINDOW = 10
   const MAX_POINTS = 300
   const MAX_LOGGER_EVENTS = 5
+  const MAX_LOG_ENTRIES = 50
 
   const pushPoint = (t: number, confidence: number) => {
     if (!Number.isFinite(t) || !Number.isFinite(confidence)) return
@@ -66,20 +68,23 @@ function App() {
       while (updated.length > MAX_LOGGER_EVENTS) updated.pop()
       return updated
     })
-  }
 
-  const showToast = (alert: any) => {
-    const newToast: Toast = {
-      id: toastCounterRef.current++,
-      source: (alert.source || 'SRC').toUpperCase(),
-      message: alert.message,
+    const newLog: LogEntry = {
+      id: logCounterRef.current++,
       ts: alert.ts,
+      source: (alert.source || 'VAD').toUpperCase(),
+      message: alert.message,
       severity: alert.severity || 'info',
     }
-    setToasts(prev => [...prev, newToast])
-    setTimeout(() => {
-      setToasts(prev => prev.filter(t => t.id !== newToast.id))
-    }, 6000)
+    setAllLogs(prev => {
+      const updated = [newLog, ...prev]
+      while (updated.length > MAX_LOG_ENTRIES) updated.pop()
+      return updated
+    })
+  }
+
+  const showToast = (_alert: any) => {
+    // Toasts replaced by embedded log panel — no-op kept for call-site compatibility.
   }
 
   const rollingAvgLastN = (n: number): number | null => {
@@ -333,6 +338,18 @@ function App() {
         <Divider orientation="vertical" style={{ gridArea: 'divider-v1', margin: '0 5px', backgroundColor: '#6235d4', width: '1px' }} />
         <div className="card output-card">
           <h3>Live VAD Output</h3>
+          <div className="log-panel" ref={logPanelRef}>
+            {allLogs.length === 0 ? (
+              <div className="log-empty">No alerts yet...</div>
+            ) : (
+              allLogs.map(log => (
+                <div key={log.id} className={`log-entry log-entry--${log.severity}`}>
+                  <div className="log-message">{log.source}: {log.message}</div>
+                  <div className="log-time">{new Date(log.ts * 1000).toLocaleTimeString()}</div>
+                </div>
+              ))
+            )}
+          </div>
           <pre id="out">{output}</pre>
         </div>
         <div className='divider-h-container' style={{ gridArea: 'eye-zone' }}>
@@ -393,21 +410,6 @@ function App() {
         </div>
       </div>
 
-      {/* Toasts Container */}
-      <div id="toasts" className="toasts">
-        {toasts.map(toast => (
-          <div
-            key={toast.id}
-            className={`toast ${toast.severity}`}
-            onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
-          >
-            <strong>{toast.source}</strong>: {toast.message}
-            <div className="meta">
-              {new Date(toast.ts * 1000).toLocaleTimeString()}
-            </div>
-          </div>
-        ))}
-      </div>
     </div>
   )
 }
