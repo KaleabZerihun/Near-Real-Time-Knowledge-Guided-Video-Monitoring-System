@@ -23,9 +23,9 @@
   grid-template-columns: 1fr auto 1fr;
   grid-template-rows: auto auto auto;
   grid-template-areas:
-    "video divider-v1 output"
+    "video divider-v1 events"
     "eye-zone eye-zone eye-zone"
-    "chart divider-v2 events";
+    "chart divider-v2 output";
   gap: 0;
   margin-top: 12px;
 }

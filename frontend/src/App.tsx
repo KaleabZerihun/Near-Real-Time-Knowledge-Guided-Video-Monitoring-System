@@ -331,10 +331,10 @@ function App() {
           </div>
         </div>
         <Divider orientation="vertical" style={{ gridArea: 'divider-v1', margin: '0 5px', backgroundColor: '#6235d4', width: '1px' }} />
-        <div className="card output-card">
+        {/* <div className="card output-card">
           <h3>Live VAD Output</h3>
           <pre id="out">{output}</pre>
-        </div>
+        </div> */}
         <div className='divider-h-container' style={{ gridArea: 'eye-zone' }}>
           <Divider orientation="horizontal" className='divider-h' />
           <FontAwesomeIcon icon={faEye} className='eye-icon-center' />
