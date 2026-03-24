@@ -63,47 +63,6 @@ pre {
   height: 480px;
 }
 
-.log-panel {
-  height: 380px;
-  overflow-y: auto;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  background: #f9f6fe;
-}
-
-.log-entry {
-  padding: 7px 12px;
-  border-bottom: 1px solid #e8e0f8;
-  font-size: 13px;
-}
-
-.log-entry:last-child {
-  border-bottom: none;
-}
-
-.log-entry--critical { border-left: 3px solid #d62728; }
-.log-entry--warning  { border-left: 3px solid #ff7f0e; }
-.log-entry--info     { border-left: 3px solid #6235d4; }
-
-.log-message {
-  color: #1a1a1a;
-  font-weight: 500;
-  line-height: 1.4;
-}
-
-.log-time {
-  color: #888;
-  font-size: 11px;
-  margin-top: 2px;
-}
-
-.log-empty {
-  padding: 24px;
-  color: #aaa;
-  text-align: center;
-  font-size: 13px;
-}
-
 .muted {
   color: #666;
   font-size: 13px;
@@ -123,6 +82,63 @@ code {
   border-radius: 6px;
 }
 
+.toasts {
+  position: fixed;
+  right: 18px;
+  top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.toast {
+  min-width: 260px;
+  max-width: 360px;
+  pointer-events: auto;
+  background: #f2e8f8;
+  color: #111;
+  padding: 10px 12px;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+  transform: translateY(-8px) scale(0.98);
+  opacity: 0;
+  transition: all 0.25s ease;
+  font-size: 14px;
+  animation: slideIn 0.25s ease forwards;
+}
+
+@keyframes slideIn {
+  to {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+}
+
+.toast.info {
+  border-left: 4px solid grey;
+}
+
+.toast.warning {
+  border-left: 4px solid orange;
+}
+
+.toast.critical {
+  border-left: 4px solid red;
+}
+
+.toast.meta {
+  font-size: 11px;
+  color: #666;
+  margin-top: 6px;
+}
+
+.meta {
+  font-size: 11px;
+  color: #666;
+  margin-top: 6px;
+}
 
 canvas {
   width: 720px;
