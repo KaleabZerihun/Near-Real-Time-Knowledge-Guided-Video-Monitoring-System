@@ -1,0 +1,68 @@
+{
+  "descriptions": [
+    {
+      "normal": {"category": "Disruptive Behavior", "description": "Audience member sitting calmly and listening to the presenter."},
+      "anomalous": {"category": "Disruptive Behavior", "description": "Audience member suddenly standing up and waving hands repeatedly."}
+    },
+    {
+      "normal": {"category": "Unsafe Behavior", "description": "Audience member sitting and taking notes."},
+      "anomalous": {"category": "Unsafe Behavior", "description": "Audience member standing on a chair."}
+    },
+    {
+      "normal": {"category": "Disruptive Behavior", "description": "Audience member raising a hand politely to ask a question."},
+      "anomalous": {"category": "Disruptive Behavior", "description": "Audience member shouting while waving both arms."}
+    },
+    {
+      "normal": {"category": "Unsafe Movement", "description": "Audience member walking slowly down the aisle."},
+      "anomalous": {"category": "Unsafe Movement", "description": "Audience member running down the aisle."}
+    },
+    {
+      "normal": {"category": "Device Usage", "description": "Audience member checking a phone while seated."},
+      "anomalous": {"category": "Device Misuse", "description": "Audience member throwing a phone onto the floor."}
+    },
+    {
+      "normal": {"category": "Device Usage", "description": "Audience member holding a phone normally."},
+      "anomalous": {"category": "Device Misuse", "description": "Audience member pointing a phone camera very close to another person’s face."}
+    },
+    {
+      "normal": {"category": "Audience Interaction", "description": "Audience member approaching the presenter calmly."},
+      "anomalous": {"category": "Aggressive Interaction", "description": "Audience member suddenly rushing toward the presenter."}
+    },
+    {
+      "normal": {"category": "Object Handling", "description": "Audience member handing an object to the presenter."},
+      "anomalous": {"category": "Object Misuse", "description": "Audience member tossing an object toward the presenter."}
+    },
+    {
+      "normal": {"category": "Audience Interaction", "description": "Audience member clapping hands."},
+      "anomalous": {"category": "Aggressive Behavior", "description": "Audience member aggressively hitting the table or chair."}
+    },
+    {
+      "normal": {"category": "Audience Interaction", "description": "Audience member waving hello toward the camera."},
+      "anomalous": {"category": "Disruptive Behavior", "description": "Audience member jumping repeatedly in front of the camera."}
+    },
+    {
+      "normal": {"category": "Movement", "description": "Audience member walking normally across the room."},
+      "anomalous": {"category": "Fall Incident", "description": "Audience member intentionally falling to the ground."}
+    },
+    {
+      "normal": {"category": "Audience Behavior", "description": "Audience member sitting upright in a chair."},
+      "anomalous": {"category": "Fall Incident", "description": "Audience member lying on the floor."}
+    },
+    {
+      "normal": {"category": "Object Handling", "description": "Audience member placing a backpack on the floor."},
+      "anomalous": {"category": "Object Misuse", "description": "Audience member kicking a backpack across the floor."}
+    },
+    {
+      "normal": {"category": "Object Handling", "description": "Audience member placing a laptop on a desk."},
+      "anomalous": {"category": "Object Misuse", "description": "Audience member dropping a laptop abruptly."}
+    },
+    {
+      "normal": {"category": "Movement", "description": "Audience member walking past the camera."},
+      "anomalous": {"category": "Camera Obstruction", "description": "Audience member covering the camera lens."}
+    },
+    {
+      "normal": {"category": "Audience Interaction", "description": "Audience member looking briefly at the camera."},
+      "anomalous": {"category": "Suspicious Behavior", "description": "Audience member staring directly into the camera very close to the lens."}
+    }
+  ]
+}

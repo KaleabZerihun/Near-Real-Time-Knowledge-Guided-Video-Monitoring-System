@@ -1,0 +1,65 @@
+[
+  {
+    "segment": 0,
+    "frame_start": 0,
+    "frame_end": 30,
+    "anomaly_score": 0.297381,
+    "label": "normal",
+    "category": "Electrocution",
+    "caption": "Worker using an extension cord in good condition with fully intact wires."
+  },
+  {
+    "segment": 1,
+    "frame_start": 30,
+    "frame_end": 60,
+    "anomaly_score": 0.296198,
+    "label": "normal",
+    "category": "Electrocution",
+    "caption": "Worker using a fully functional and regularly inspected power tool."
+  },
+  {
+    "segment": 2,
+    "frame_start": 60,
+    "frame_end": 90,
+    "anomaly_score": 0.299176,
+    "label": "normal",
+    "category": "Electrocution",
+    "caption": "Worker using an extension cord in good condition with fully intact wires."
+  },
+  {
+    "segment": 3,
+    "frame_start": 90,
+    "frame_end": 120,
+    "anomaly_score": 0.200093,
+    "label": "normal",
+    "category": "Electrocution",
+    "caption": "Worker using an extension cord in good condition with fully intact wires."
+  },
+  {
+    "segment": 4,
+    "frame_start": 120,
+    "frame_end": 150,
+    "anomaly_score": 0.201125,
+    "label": "normal",
+    "category": "Electrocution",
+    "caption": "Worker using an extension cord in good condition with fully intact wires."
+  },
+  {
+    "segment": 5,
+    "frame_start": 150,
+    "frame_end": 180,
+    "anomaly_score": 0.201337,
+    "label": "normal",
+    "category": "Electrocution",
+    "caption": "Worker using an extension cord in good condition with fully intact wires."
+  },
+  {
+    "segment": 6,
+    "frame_start": 180,
+    "frame_end": 201,
+    "anomaly_score": 0.299919,
+    "label": "normal",
+    "category": "Electrocution",
+    "caption": "Worker using an extension cord in good condition with fully intact wires."
+  }
+]

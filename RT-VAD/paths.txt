@@ -1,0 +1,15 @@
+Paths:
+
+merge_prompts.py
+
+ai_event.json  = /Users/girisha/Desktop/thesis_local/thesis/src/memory/
+AI_event_memory.json = /Users/girisha/Desktop/thesis_local/thesis/src/memory/
+flashback_batch.json (construction) = /Users/girisha/Desktop/thesis_local/thesis/src/memory/
+Memory,json = /Users/girisha/Desktop/thesis_local/thesis/src/memory/
+
+Text encoder.py
+
+memory.json= /Users/girisha/Desktop/thesis_local/thesis/src/memory/embeddings/stage1
+AI_event_memory.json = /Users/girisha/Desktop/thesis_local/thesis/src/memory/embeddings/stage2
+
+never used original flashback memory - prompt batches

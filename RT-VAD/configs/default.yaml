@@ -1,0 +1,19 @@
+encoder: clip
+clip:
+  model_name: ViT-B/32
+
+segment:
+  clip_len: 16
+  overlap: 8
+
+retrieval:
+  topk: 10
+  sap_gamma: 0.7
+  use_rp: true
+
+paths:
+  train_csv: /scratch/jacks.local/pamasa/thesis/data/splits/ShanghaiTech_train_frames.csv
+  test_csv:  /scratch/jacks.local/pamasa/thesis/data/splits/ShanghaiTech_test_frames.csv
+  memory_captions: /scratch/jacks.local/pamasa/thesis/data/memory/captions.csv
+  memory_embeds:   /scratch/jacks.local/pamasa/thesis/data/memory/text_embeds.npy
+  frames_root: /scratch/jacks.local/pamasa/thesis/data/frames

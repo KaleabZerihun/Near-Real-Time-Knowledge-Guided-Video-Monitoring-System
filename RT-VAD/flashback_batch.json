@@ -1,0 +1,44 @@
+{
+  "descriptions": [
+    {
+      "normal": {"category": "Fall", "description": "Worker standing safely away from the edge with guardrails in place."},
+      "anomalous": {"category": "Fall", "description": "Worker standing at an unprotected edge."}
+    },
+    {
+      "normal": {"category": "Fall", "description": "Worker climbing a ladder with both hands and one foot in contact at all times."},
+      "anomalous": {"category": "Fall", "description": "Worker climbing a ladder without three points of contact."}
+    },
+    {
+      "normal": {"category": "Fall", "description": "Worker on a fully assembled and secured scaffold with proper guardrails."},
+      "anomalous": {"category": "Fall", "description": "Worker on an incomplete scaffold."}
+    },
+    {
+      "normal": {"category": "Fall", "description": "Worker walking carefully on a dry, clearly marked and non-slip surface."},
+      "anomalous": {"category": "Fall", "description": "Worker walking on a wet, slippery surface."}
+    },
+    {
+      "normal": {"category": "Fall", "description": "Worker standing in a clear zone away from overhead material storage areas."},
+      "anomalous": {"category": "Fall", "description": "Worker standing under an area with materials overhead."}
+    },
+    {
+      "normal": {"category": "Electrocution", "description": "Worker operating equipment at a safe and regulated distance from power lines."},
+      "anomalous": {"category": "Electrocution", "description": "Worker operating equipment close to overhead power lines."}
+    },
+    {
+      "normal": {"category": "Electrocution", "description": "Worker using an extension cord in good condition with fully intact wires."},
+      "anomalous": {"category": "Electrocution", "description": "Worker using an extension cord with damaged wires."}
+    },
+    {
+      "normal": {"category": "Electrocution", "description": "Worker using properly insulated and secured electrical wiring connections."},
+      "anomalous": {"category": "Electrocution", "description": "Worker handling temporary electrical wiring connections."}
+    },
+    {
+      "normal": {"category": "Electrocution", "description": "Worker using a fully functional and regularly inspected power tool."},
+      "anomalous": {"category": "Electrocution", "description": "Worker using a damaged or defective power tool."}
+    },
+    {
+      "normal": {"category": "Electrocution", "description": "Worker using a fibreglass ladder at a safe distance from electrical sources."},
+      "anomalous": {"category": "Electrocution", "description": "Worker using a metal ladder close to electricity."}
+    }
+  ]
+}
