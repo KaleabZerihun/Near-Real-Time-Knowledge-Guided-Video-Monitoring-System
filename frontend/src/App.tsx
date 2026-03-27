@@ -28,7 +28,7 @@ interface Toast {
 function App() {
   const [pipelineEnabled, setPipelineEnabled] = useState<boolean | null>(null)
   const [vadStatus, setVadStatus] = useState('waiting...')
-  const [output, setOutput] = useState<string>('{ "status": "checking_pipeline_status" }')
+  const [, setOutput] = useState<string>('{ "status": "checking_pipeline_status" }')
   const [points, setPoints] = useState<VADPoint[]>([])
   const [loggerEvents, setLoggerEvents] = useState<LoggerEvent[]>([])
   const [toasts, setToasts] = useState<Toast[]>([])
@@ -269,7 +269,7 @@ function App() {
                 pushLoggerEvent(a)
               })
             }
-          } catch (err) {
+          } catch {
             setOutput(e.data)
           }
         }
