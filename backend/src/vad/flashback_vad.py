@@ -1,5 +1,6 @@
 from __future__ import annotations
 import os
+import json
 from dataclasses import dataclass
 from typing import Optional, Any, Dict, List, Tuple
 import cv2
@@ -21,18 +22,18 @@ class VADOutput:
     extra: Dict[str, Any]
 
 _MODEL_CACHE: Dict[str, torch.nn.Module] = {}
-_MEMORY_CACHE: Dict[Tuple[str, str], Tuple[torch.Tensor, torch.Tensor, List[str]]] = {}
+_MEMORY_CACHE: Dict[Tuple[str, str, str, str, str], Tuple[torch.Tensor, torch.Tensor, List[str]]] = {}
 
 class FlashbackVAD:
 
     def __init__(
         self,
-        thesis_root: str,
+        rtvad_root: str,
         top_k: int = 10,
         anomaly_threshold: float = 0.5,
         device: Optional[str] = None,
     ):
-        self.thesis_root = os.path.abspath(thesis_root)
+        self.rtvad_root = os.path.abspath(rtvad_root)
         self.top_k = int(top_k)
         self.anomaly_threshold = float(anomaly_threshold)
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
@@ -49,11 +50,17 @@ class FlashbackVAD:
         )
 
     # ---------------- paths / loading ----------------
-    def _memory_paths(self) -> Tuple[str, str]:
-        mem_dir = os.path.join(self.thesis_root, "src", "memory")
-        emb_path = os.path.join(mem_dir, "flashback_text_embeddings_SAP.npy")
-        cap_path = os.path.join(mem_dir, "flashback_captions.txt")
-        return emb_path, cap_path
+    def _memory_paths(self) -> Tuple[str, str, str, str]:
+        emb_dir = os.path.join(self.rtvad_root, "embeddings", "stage1")
+        emb_normal_path = os.path.join(emb_dir, "embeddings_normal.npy")
+        emb_anomalous_path = os.path.join(emb_dir, "embeddings_anomalous.npy")
+        meta_path = os.path.join(emb_dir, "memory_meta.json")
+        custom_path = os.path.join(self.rtvad_root, "custom_anomaly_memory.json")
+        return emb_normal_path, emb_anomalous_path, meta_path, custom_path
+
+    def _cache_key(self) -> Tuple[str, str, str, str, str]:
+        emb_normal_path, emb_anomalous_path, meta_path, custom_path = self._memory_paths()
+        return (emb_normal_path, emb_anomalous_path, meta_path, custom_path, self.device)
 
     def _get_or_load_model(self) -> torch.nn.Module:
         key = self.device
@@ -73,25 +80,32 @@ class FlashbackVAD:
         return model
 
     def _get_or_load_memory(self) -> Tuple[torch.Tensor, torch.Tensor, List[str]]:
-        emb_path, cap_path = self._memory_paths()
-        cache_key = (emb_path, self.device)
+        emb_normal_path, emb_anomalous_path, meta_path, custom_path = self._memory_paths()
+        cache_key = self._cache_key()
 
         if cache_key in _MEMORY_CACHE:
             return _MEMORY_CACHE[cache_key]
 
-        if not os.path.exists(emb_path):
+        if not os.path.exists(emb_normal_path):
             raise FileNotFoundError(
-                f"Missing embeddings file: {emb_path}\n"
-                "This file must NOT be committed to GitHub (too large).\n"
-                "Each teammate must place it at: THESIS/src/memory/flashback_text_embeddings_SAP.npy"
+                f"Missing normal embeddings file: {emb_normal_path}\n"
+                "Run the memory generation steps in RT-VAD directory."
             )
-        if not os.path.exists(cap_path):
+        if not os.path.exists(emb_anomalous_path):
             raise FileNotFoundError(
-                f"Missing captions file: {cap_path}\n"
-                "Place it at: THESIS/src/memory/flashback_captions.txt"
+                f"Missing anomalous embeddings file: {emb_anomalous_path}\n"
+                "Run the memory generation steps in RT-VAD directory."
+            )
+        if not os.path.exists(meta_path):
+            raise FileNotFoundError(
+                f"Missing memory meta file: {meta_path}\n"
+                "Run the memory generation steps in RT-VAD directory."
             )
 
-        emb_np = np.load(emb_path)
+        emb_normal_np = np.load(emb_normal_path)
+        emb_anomalous_np = np.load(emb_anomalous_path)
+        emb_np = np.concatenate([emb_normal_np, emb_anomalous_np], axis=0)
+
         if emb_np.ndim != 2:
             raise ValueError(f"Embeddings must be 2D (N,D). Got {emb_np.shape}")
 
@@ -100,24 +114,64 @@ class FlashbackVAD:
         if self.device == "cuda":
             text_emb = text_emb.half()
 
-        n_total = text_emb.shape[0]
-        half = n_total // 2
+        n_normal = emb_normal_np.shape[0]
+        n_anomalous = emb_anomalous_np.shape[0]
+        n_total = n_normal + n_anomalous
 
         y_labels = torch.zeros(n_total, device=self.device)
-        y_labels[half:] = 1.0
+        y_labels[n_normal:] = 1.0
 
-        with open(cap_path, "r", encoding="utf-8") as f:
-            captions = [c.strip() for c in f.readlines() if c.strip()]
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+        captions_normal = meta.get("captions_normal", [])
+        captions_anomalous = meta.get("captions_anomalous", [])
+        captions = captions_normal + captions_anomalous
 
-        if len(captions) != n_total:
+        if os.path.exists(custom_path):
+            try:
+                with open(custom_path, "r", encoding="utf-8") as f:
+                    custom_data = json.load(f)
+                custom_items = custom_data.get("custom_anomalies", []) if isinstance(custom_data, dict) else []
+            except Exception:
+                custom_items = []
+
+            if isinstance(custom_items, list) and custom_items:
+                custom_embs = np.array(
+                    [item.get("embedding") for item in custom_items if item.get("embedding") is not None],
+                    dtype=np.float32,
+                )
+                if custom_embs.ndim == 1:
+                    custom_embs = custom_embs.reshape(1, -1)
+
+                if custom_embs.ndim == 2 and custom_embs.shape[1] == text_emb.shape[1]:
+                    custom_text_emb = torch.tensor(custom_embs, dtype=torch.float32, device=self.device)
+                    custom_text_emb = F.normalize(custom_text_emb, p=2, dim=-1)
+                    if self.device == "cuda":
+                        custom_text_emb = custom_text_emb.half()
+
+                    text_emb = torch.cat([text_emb, custom_text_emb], dim=0)
+                    custom_labels = torch.ones(custom_text_emb.shape[0], device=self.device)
+                    y_labels = torch.cat([y_labels, custom_labels], dim=0)
+                    captions += [item.get("text", "") for item in custom_items]
+                else:
+                    print(
+                        f"[WARN] Skipping custom anomaly memory load; expected emb dim {text_emb.shape[1]}, got {custom_embs.shape}"
+                    )
+
+        if len(captions) != y_labels.shape[0]:
             print(
-                f"[WARN] captions({len(captions)}) != embeddings({n_total}). "
+                f"[WARN] captions({len(captions)}) != embeddings({y_labels.shape[0]}). "
                 "Top caption lookup may be mismatched."
             )
 
         _MEMORY_CACHE[cache_key] = (text_emb, y_labels, captions)
         print("[VAD] Memory loaded (cached).")
         return text_emb, y_labels, captions
+
+    def reload_memory(self) -> None:
+        cache_key = self._cache_key()
+        _MEMORY_CACHE.pop(cache_key, None)
+        self._text_emb, self._labels, self._captions = self._get_or_load_memory()
 
     def _compute_anomaly_score(self, video_emb: torch.Tensor) -> Tuple[float, str, Dict[str, Any]]:
       

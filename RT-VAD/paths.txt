@@ -2,14 +2,18 @@ Paths:
 
 merge_prompts.py
 
-ai_event.json  = /Users/girisha/Desktop/thesis_local/thesis/src/memory/
-AI_event_memory.json = /Users/girisha/Desktop/thesis_local/thesis/src/memory/
-flashback_batch.json (construction) = /Users/girisha/Desktop/thesis_local/thesis/src/memory/
-Memory,json = /Users/girisha/Desktop/thesis_local/thesis/src/memory/
+flashback_batch*.json  = ./
+memory.json             = ./memory.json
 
-Text encoder.py
+textencoder.py
 
-memory.json= /Users/girisha/Desktop/thesis_local/thesis/src/memory/embeddings/stage1
-AI_event_memory.json = /Users/girisha/Desktop/thesis_local/thesis/src/memory/embeddings/stage2
+memory.json              = ./memory.json
+embeddings_normal.npy    = ./embeddings/stage1/embeddings_normal.npy
+embeddings_anomalous.npy = ./embeddings/stage1/embeddings_anomalous.npy
+memory_meta.json         = ./embeddings/stage1/memory_meta.json
 
-never used original flashback memory - prompt batches
+flashback_eval.py
+
+embeddings_dir         = ./embeddings/stage1
+custom_memory_path     = ./custom_anomaly_memory.json
+checkpoint_path        = ./.checkpoints/imagebind_huge.pth

@@ -30,10 +30,10 @@ warnings.filterwarnings("ignore")
 torch.set_num_threads(os.cpu_count())  # OPT: use all CPU cores
 
 # CONFIG
-DEFAULT_VIDEO_PATH = "/Users/girisha/Downloads/fall_scaffold_shorts_02.mp4"
-DEFAULT_EMBEDDINGS_DIR = "/Users/girisha/Desktop/thesis_local/thesis/src/memory/embeddings/stage2"
-DEFAULT_CUSTOM_MEMORY_PATH = "/Users/girisha/Desktop/thesis_local/thesis/src/memory/custom_anomaly_memory.json"
-CHECKPOINT_PATH = "/Users/girisha/Desktop/thesis_local/thesis/src/memory/.checkpoints/imagebind_huge.pth"
+DEFAULT_VIDEO_PATH = "./video.mp4"
+DEFAULT_EMBEDDINGS_DIR = "./embeddings/stage1"
+DEFAULT_CUSTOM_MEMORY_PATH = "./custom_anomaly_memory.json"
+CHECKPOINT_PATH = "./.checkpoints/imagebind_huge.pth"
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 TOP_K = 10

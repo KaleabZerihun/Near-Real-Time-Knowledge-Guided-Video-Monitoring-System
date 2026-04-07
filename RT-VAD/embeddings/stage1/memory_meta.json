@@ -4,8 +4,8 @@
   "NN": 10,
   "NA": 10,
   "embedding_dim": 1024,
-  "ZN_path": "/Users/girisha/Desktop/thesis_local/thesis/src/memory/embeddings/stage1/embeddings_normal.npy",
-  "ZA_path": "/Users/girisha/Desktop/thesis_local/thesis/src/memory/embeddings/stage1/embeddings_anomalous.npy",
+  "ZN_path": "./embeddings_normal.npy",
+  "ZA_path": "./embeddings_anomalous.npy",
   "captions_normal": [
     "Worker standing safely away from the edge with guardrails in place.",
     "Worker climbing a ladder with both hands and one foot in contact at all times.",

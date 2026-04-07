@@ -43,7 +43,7 @@ def startup() -> None:
 
     # Repo root is one level above backend/
     repo_root = THIS_DIR.parent
-    thesis_root = repo_root / "THESIS"
+    rtvad_root = repo_root / "RT-VAD"
 
     # Load env vars from repo root (.env)
     env_path = repo_root / ".env"
@@ -73,7 +73,7 @@ def startup() -> None:
         max_batches=8,         # queue size
     )
 
-    runner = PipelineRunner(cfg=cfg, thesis_root=str(thesis_root))
+    runner = PipelineRunner(cfg=cfg, rtvad_root=str(rtvad_root))
     runner.start()
 
 

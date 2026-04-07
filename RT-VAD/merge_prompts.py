@@ -12,11 +12,14 @@ logger = logging.getLogger(__name__)
 
 def merge_batches(input_dir: str, output_path: str, max_pairs: int = 1_000_000):
     in_path = Path(input_dir)
-    #batch_files = sorted(in_path.glob("flashback_batch.json")) 
-    batch_files = sorted(in_path.glob("ai_event.json")) 
+    batch_files = sorted(in_path.glob("flashback_batch*.json"))
+    if not batch_files:
+        batch_files = sorted(in_path.glob("ai_event.json"))
 
     if not batch_files:
-        raise FileNotFoundError(f"No flashback_batch.json files found in '{input_dir}'")
+        raise FileNotFoundError(
+            f"No flashback_batch*.json or ai_event.json files found in '{input_dir}'"
+        )
 
     logger.info(f"Found {len(batch_files)} batch files in '{input_dir}'.")
 
@@ -144,12 +147,12 @@ def main():
         description="Merge GPT batch caption files into a unified pseudo-scene memory."
     )
     parser.add_argument(
-        "--input_dir", type=str, default="/Users/girisha/Desktop/thesis_local/thesis/src/memory",
-        help="Directory containing flashback_batch*.json files."
+        "--input_dir", type=str, default=str(Path(__file__).resolve().parent),
+        help="Directory containing flashback_batch*.json or ai_event.json files."
     )
     parser.add_argument(
-        "--output_path", type=str, default="/Users/girisha/Desktop/thesis_local/thesis/src/memory/AI_event_memory.json",
-        help="Output path for the merged pseudo-scene memory JSON."
+        "--output_path", type=str, default=str(Path(__file__).resolve().parent / "memory.json"),
+        help="Output path for the merged memory JSON."
     )
     parser.add_argument(
         "--max_pairs", type=int, default=1_000_000,

@@ -1,13 +1,8 @@
-<<<<<<< HEAD
-
-THESIS/src/memory/*.npy
+RT-VAD/embeddings/**/*.npy
 backend/.checkpoints/*
 backend/models/*
 **/*.pth
 **/*.pt
-
-=======
->>>>>>> 571db42223930bb261bef81d5f2013cb6fd43ee3
 # --- Python ---
 __pycache__/
 *.py[cod]

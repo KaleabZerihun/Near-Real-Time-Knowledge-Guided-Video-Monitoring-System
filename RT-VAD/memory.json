@@ -3,7 +3,7 @@
     "total_pairs": 10,
     "NN": 10,
     "NA": 10,
-    "source_dir": "/Users/girisha/Desktop/thesis_local/thesis/src/memory"
+    "source_dir": "./"
   },
   "captions_normal": [
     "Worker standing safely away from the edge with guardrails in place.",

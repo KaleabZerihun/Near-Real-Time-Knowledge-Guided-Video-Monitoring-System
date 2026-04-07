@@ -3,11 +3,14 @@ import json
 import os
 import sqlite3
 import time
+import uuid
+import threading
 from pathlib import Path
 
 import cv2
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from importlib.util import module_from_spec, spec_from_file_location
 
 from src.events.schemas import FramesIngest, VadIngest
 from src.events import service as events_service
@@ -33,6 +36,117 @@ def _get_sqlite_path() -> Path:
         db_path_str = database_url.replace("sqlite:///", "", 1)
 
     return Path(db_path_str).resolve()
+
+
+def _load_rtvad_textencoder_module(rtvad_root: Path):
+    textencoder_path = rtvad_root / "textencoder.py"
+    if not textencoder_path.exists():
+        raise FileNotFoundError(f"RT-VAD textencoder not found at {textencoder_path}")
+
+    spec = spec_from_file_location("rtvad_textencoder", str(textencoder_path))
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not import textencoder from {textencoder_path}")
+
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _ensure_custom_memory_file(path: Path):
+    if not path.exists():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({"custom_anomalies": []}, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _load_custom_memory(path: Path):
+    _ensure_custom_memory_file(path)
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    return data.get("custom_anomalies", []) if isinstance(data, dict) else []
+
+
+def _save_custom_memory(path: Path, items):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"custom_anomalies": items}, f, ensure_ascii=False, indent=2)
+
+
+def _build_custom_anomaly_async(runner, rtvad_root: Path, text: str, custom_path: Path):
+    """
+    Background thread worker to build custom anomaly embedding without blocking the pipeline.
+    """
+    try:
+        items = _load_custom_memory(custom_path)
+        
+        # Check again in case another request added it
+        if any(item.get("text", "").strip().lower() == text.lower() for item in items):
+            print(f"[CUSTOM-ANOMALY] Already exists (concurrent add): {text}")
+            return
+        
+        textencoder = _load_rtvad_textencoder_module(rtvad_root)
+        textencoder.CHECKPOINT_PATH = rtvad_root / ".checkpoints" / "imagebind_huge.pth"
+        model, ModalityType, imagebind_data = textencoder.load_imagebind(
+            textencoder.torch.device(runner.vad.device if runner.vad.device else "cpu")
+        )
+        emb, _ = textencoder.build_custom_anomaly_embedding(
+            text=text,
+            model=model,
+            ModalityType=ModalityType,
+            imagebind_data=imagebind_data,
+            device=textencoder.torch.device(runner.vad.device if runner.vad.device else "cpu"),
+            alpha=0.95,
+            apply_prompt_template=False,
+        )
+        
+        items.append({
+            "id": str(uuid.uuid4()),
+            "text": text,
+            "category": "user_defined_anomaly",
+            "label": 1,
+            "embedding": emb.tolist(),
+            "created_at": time.time(),
+        })
+        
+        _save_custom_memory(custom_path, items)
+        runner.vad.reload_memory()
+        print(f"[CUSTOM-ANOMALY] Successfully added: {text}")
+    except Exception as e:
+        print(f"[CUSTOM-ANOMALY] Error building embedding for '{text}': {e}")
+
+
+@router.post("/pipeline/custom-anomaly")
+async def pipeline_custom_anomaly(request: Request):
+    try:
+        runner = request.app.state.runner
+        if not runner:
+            return JSONResponse({"error": "Pipeline is not running"}, status_code=503)
+
+        payload = await request.json()
+        text = payload.get("text", "").strip()
+        if not text:
+            return JSONResponse({"error": "Text is required"}, status_code=400)
+
+        rtvad_root = Path(runner.vad.rtvad_root)
+        custom_path = rtvad_root / "custom_anomaly_memory.json"
+        _ensure_custom_memory_file(custom_path)
+        items = _load_custom_memory(custom_path)
+
+        if any(item.get("text", "").strip().lower() == text.lower() for item in items):
+            return JSONResponse({"error": "This custom anomaly already exists"}, status_code=409)
+
+        # Return immediately and build embedding in background thread
+        thread = threading.Thread(
+            target=_build_custom_anomaly_async,
+            args=(runner, rtvad_root, text, custom_path),
+            daemon=True
+        )
+        thread.start()
+
+        return JSONResponse({"added": True, "text": text, "status": "building_embedding"}, status_code=202)
+    except Exception as e:
+        print(f"[CUSTOM-ANOMALY] Route error: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
 
 @router.get("/db/health")
 def db_health():
@@ -167,8 +281,8 @@ def pipeline_history(limit: int = 300):
 
     points = [
         {
-            "x": row["occurred_at"],
-            "y": row["vad_score"],
+            "t": row["occurred_at"],
+            "confidence": row["vad_score"],
             "label": row["event_type"],
             "decision": row["decision"],
             "camera_id": row["camera_id"],

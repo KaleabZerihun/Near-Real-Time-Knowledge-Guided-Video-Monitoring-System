@@ -17,10 +17,10 @@ from src.logger.logger import InMemoryLogger
 
 
 class PipelineRunner:
-    def __init__(self, cfg: FrameSelectorConfig, thesis_root: str, logger: InMemoryLogger | None = None):
+    def __init__(self, cfg: FrameSelectorConfig, rtvad_root: str, logger: InMemoryLogger | None = None):
         #create the frame selector, VAD and KG object
         self.selector = FrameSelector(cfg)
-        self.vad = FlashbackVAD(thesis_root=thesis_root)
+        self.vad = FlashbackVAD(rtvad_root=rtvad_root)
         self.kg = DummyAugmentor()
         self.logger = logger or InMemoryLogger()
 

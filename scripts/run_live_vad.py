@@ -9,15 +9,15 @@ from src.frame_selector.runtime_selector import FrameSelector
 from src.vad.flashback_vad import FlashbackVAD
 
 
-def find_thesis_root() -> str:
-    # scripts/ is inside backend/, so THESIS is at project root: ../THESIS
+def find_rtvad_root() -> str:
+    # scripts/ is inside backend/, so RT-VAD is at project root: ../RT-VAD
     here = os.path.dirname(__file__)
-    thesis = os.path.abspath(os.path.join(here, "..", "..", "THESIS"))
-    return thesis
+    rtvad = os.path.abspath(os.path.join(here, "..", "..", "RT-VAD"))
+    return rtvad
 
 
 def main():
-    thesis_root = find_thesis_root()
+    rtvad_root = find_rtvad_root()
 
     # --- Darik FrameSelector config (reuse as-is) ---
     cfg = FrameSelectorConfig(
@@ -33,13 +33,13 @@ def main():
 
     selector = FrameSelector(cfg)
     vad = FlashbackVAD(
-        thesis_root=thesis_root,
+        rtvad_root=rtvad_root,
         top_k=10,
         anomaly_threshold=0.5,
     )
 
     print("\n=== RUNNING LIVE PIPELINE ===")
-    print(f"THESIS root: {thesis_root}")
+    print(f"RT-VAD root: {rtvad_root}")
     print("Press 'q' on the webcam window to quit.\n")
 
     selector.start()

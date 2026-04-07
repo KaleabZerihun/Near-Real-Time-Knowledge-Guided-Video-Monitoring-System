@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 logger = logging.getLogger(__name__)
 
 ALPHA = 0.95  # SAP
-CHECKPOINT_PATH = "/Users/girisha/Desktop/thesis_local/thesis/src/memory/.checkpoints/imagebind_huge.pth"
+CHECKPOINT_PATH = Path(".checkpoints") / "imagebind_huge.pth"
 
 
 def load_imagebind(device):
@@ -160,8 +160,8 @@ def encode_memory(memory_path, output_dir, alpha=ALPHA, batch_size=256, device_s
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--memory_path", type=str, default="/Users/girisha/Desktop/thesis_local/thesis/src/memory/AI_event_memory.json") #change to memory.json for stage 1
-    parser.add_argument("--output_dir", type=str, default="/Users/girisha/Desktop/thesis_local/thesis/src/memory/embeddings/stage2")
+    parser.add_argument("--memory_path", type=str, default=str(Path(__file__).resolve().parent / "memory.json"))
+    parser.add_argument("--output_dir", type=str, default=str(Path(__file__).resolve().parent / "embeddings" / "stage1"))
     parser.add_argument("--alpha", type=float, default=0.95)
     parser.add_argument("--batch_size", type=int, default=256)
     parser.add_argument("--device", type=str, default="cuda")

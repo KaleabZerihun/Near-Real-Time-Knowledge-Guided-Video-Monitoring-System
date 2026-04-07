@@ -33,6 +33,10 @@ function App() {
   const [loggerEvents, setLoggerEvents] = useState<LoggerEvent[]>([])
   const [toasts, setToasts] = useState<Toast[]>([])
   const [avgText, setAvgText] = useState('Rolling average: waiting...')
+  const [customEventText, setCustomEventText] = useState('')
+  const [customEventLoading, setCustomEventLoading] = useState(false)
+  const [customEventFeedback, setCustomEventFeedback] = useState('')
+  const [maxEventsHeight, setMaxEventsHeight] = useState('400px')
   
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
@@ -82,6 +86,51 @@ function App() {
     }, 6000)
   }
 
+  const createCustomEvent = async () => {
+    const text = customEventText.trim()
+    if (!text) {
+      showToast({ source: 'UI', message: 'Enter an event description', ts: Date.now() / 1000, severity: 'warning' })
+      return
+    }
+
+    setCustomEventLoading(true)
+    setCustomEventFeedback('')
+    try {
+      const res = await fetch('/pipeline/custom-anomaly', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      })
+      
+      // Check if response is JSON
+      const contentType = res.headers.get('content-type')
+      if (!contentType || !contentType.includes('application/json')) {
+        const textResp = await res.text()
+        throw new Error(`Invalid response from server (${res.status}): ${textResp.substring(0, 100)}`)
+      }
+      
+      const data = await res.json()
+      
+      if (res.ok || res.status === 202) {
+        // 202 Accepted means it's building in background
+        setCustomEventText('')
+        const statusMsg = res.status === 202 ? 'Building embedding in background...' : `Added custom event: ${data.text}`
+        setCustomEventFeedback(statusMsg)
+        showToast({ source: 'RT-VAD', message: statusMsg, ts: Date.now() / 1000, severity: 'info' })
+      } else {
+        const msg = data.error || data.detail || 'Failed to add custom event'
+        throw new Error(msg)
+      }
+    } catch (err: any) {
+      const message = err?.message || 'Unable to submit custom event'
+      setCustomEventFeedback(message)
+      showToast({ source: 'RT-VAD', message, ts: Date.now() / 1000, severity: 'critical' })
+      console.error('Custom event error:', err)
+    } finally {
+      setCustomEventLoading(false)
+    }
+  }
+
   const rollingAvgLastN = (n: number): number | null => {
     if (points.length === 0) return null
     const k = Math.max(1, Math.min(points.length, n))
@@ -107,6 +156,19 @@ function App() {
     }
     return series
   }
+
+  useEffect(() => {
+    const updateEventsHeight = () => {
+      const container = document.querySelector('.events-card')
+      if (container) {
+        const containerHeight = container.clientHeight
+        setMaxEventsHeight(Math.min(containerHeight - 80, 400) + 'px')
+      }
+    }
+    updateEventsHeight()
+    window.addEventListener('resize', updateEventsHeight)
+    return () => window.removeEventListener('resize', updateEventsHeight)
+  }, [])
 
   const drawChart = () => {
     const canvas = canvasRef.current
@@ -231,7 +293,7 @@ function App() {
           const histRes = await fetch('/pipeline/history?limit=300')
           const hist = await histRes.json()
           if (hist.points && Array.isArray(hist.points)) {
-            hist.points.forEach((p: VADPoint) => pushPoint(p.t, p.confidence))
+            hist.points.forEach((p: any) => pushPoint(p.t ?? p.x, p.confidence ?? p.y))
           }
         } catch (e) {
           console.error('Failed to load history:', e)
@@ -305,13 +367,6 @@ function App() {
         <span className="app-title">Near Real-Time Knowledge-Guided Video Monitoring System</span>
       </div>
 
-      {/* Dev only, delete when not needed  
-      <div className="muted">
-        Video: <code>/video/mjpeg</code> | Live VAD stream: <code>/pipeline/stream</code> | Metrics:{' '}
-        <code>/frame-selector/metrics</code> | Overtime: <code>/pipeline/history</code>
-      </div>
-      */}
-
       {pipelineEnabled === false && (
         <div className="warn">
           <b>Pipeline is disabled.</b>
@@ -331,10 +386,33 @@ function App() {
           </div>
         </div>
         <Divider orientation="vertical" style={{ gridArea: 'divider-v1', margin: '0 5px', backgroundColor: '#6235d4', width: '1px' }} />
-        {/* <div className="card output-card">
-          <h3>Live VAD Output</h3>
-          <pre id="out">{output}</pre>
-        </div> */}
+        <div>
+          <h3>Add Custom Event</h3>
+          <div className="muted" style={{ marginBottom: '8px' }}>
+            Enter a short description of the event you want the system to recognize automatically.
+          </div>
+          <textarea
+            id="customEventText"
+            value={customEventText}
+            onChange={e => setCustomEventText(e.target.value)}
+            placeholder="e.g. person falling, unattended bag, man entering restricted area"
+            rows={3}
+            style={{ width: '100%', borderRadius: '10px', border: '1px solid #ccc', padding: '10px', marginTop: '8px', resize: 'vertical', fontFamily: 'inherit' }}
+          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px' }}>
+            <button
+              className="action-button"
+              onClick={createCustomEvent}
+              disabled={customEventLoading || pipelineEnabled === false}
+              style={{ padding: '10px 16px', borderRadius: '10px', border: 'none', background: '#6235d4', color: '#fff', cursor: 'pointer', minWidth: '120px', opacity: (customEventLoading || pipelineEnabled === false) ? 0.6 : 1 }}
+            >
+              {customEventLoading ? 'Adding...' : 'Add Event'}
+            </button>
+            {customEventFeedback && (
+              <span style={{ color: '#2d2d2d', fontSize: '12px' }}>{customEventFeedback}</span>
+            )}
+          </div>
+        </div>
         <div className='divider-h-container' style={{ gridArea: 'eye-zone' }}>
           <Divider orientation="horizontal" className='divider-h' />
           <FontAwesomeIcon icon={faEye} className='eye-icon-center' />
@@ -361,7 +439,7 @@ function App() {
           <div className="muted" style={{ marginBottom: '8px' }}>
             Last 5 Alerts
           </div>
-          <div className="events-container">
+          <div className="events-container" style={{ maxHeight: maxEventsHeight, overflowY: 'auto' }}>
             {loggerEvents.length === 0 ? (
               <div style={{ color: 'black', textAlign: 'center', padding: '20px' }}>
                 No events yet...
@@ -391,22 +469,53 @@ function App() {
             )}
           </div>
         </div>
+        {/*
+        <div>
+          <h3>RT-VAD Memory Setup</h3>
+          <div className="muted" style={{ marginBottom: '8px' }}>
+            Use the RT-VAD memory generation flow when you change prompts or flashback batch files.
+          </div>
+          <ol className="instructions-list">
+            <li>Edit prompt batches in <code>RT-VAD/flashback_batch.json</code>.</li>
+            <li>Run <code>python RT-VAD/merge_prompts.py</code> to create <code>RT-VAD/memory.json</code>.</li>
+            <li>Run <code>python RT-VAD/textencoder.py</code> to generate <code>RT-VAD/embeddings/stage1</code>.</li>
+            <li>Run <code>streamlit run RT-VAD/flashback_eval.py</code> to evaluate anomaly scores and frame visualizations.</li>
+          </ol>
+          <div className="muted" style={{ marginTop: '8px' }}>
+            If you do not change prompts or <code>flashback_batch.json</code>, skip directly to evaluation.
+          </div>
+        </div>
+        */}
       </div>
 
       {/* Toasts Container */}
       <div id="toasts" className="toasts">
-        {toasts.map(toast => (
-          <div
-            key={toast.id}
-            className={`toast ${toast.severity}`}
-            onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
-          >
-            <strong>{toast.source}</strong>: {toast.message}
-            <div className="meta">
-              {new Date(toast.ts * 1000).toLocaleTimeString()}
+        {toasts.map(toast => {
+          const severityColor =
+            toast.severity === 'critical'
+              ? '#d62728'
+              : toast.severity === 'warning'
+                ? '#ff7f0e'
+                : '#1f77b4'
+          return (
+            <div
+              key={toast.id}
+              className={`toast ${toast.severity}`}
+              onClick={() => setToasts(prev => prev.filter(t => t.id !== toast.id))}
+            >
+              <div>
+                <span className="event-label" style={{ color: severityColor }}>
+                  {toast.severity.toUpperCase()}
+                </span>{' '}
+                <span style={{ color: '#666', fontSize: '12px' }}>{toast.source}</span>
+              </div>
+              <div style={{ margin: '4px 0' }}>{toast.message}</div>
+              <div className="event-time">
+                {new Date(toast.ts * 1000).toLocaleTimeString()}
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )

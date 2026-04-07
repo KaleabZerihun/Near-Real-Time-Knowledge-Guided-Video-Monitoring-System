@@ -4,9 +4,9 @@
   "NN": 16,
   "NA": 16,
   "embedding_dim": 1024,
-  "ZN_path": "/Users/girisha/Desktop/thesis_local/thesis/src/memory/embeddings/stage2/embeddings_normal.npy",
-  "ZA_path": "/Users/girisha/Desktop/thesis_local/thesis/src/memory/embeddings/stage2/embeddings_anomalous.npy",
-  "memory_path": "/Users/girisha/Desktop/thesis_local/thesis/src/memory/AI_event_memory.json",
+  "ZN_path": "./embeddings_normal.npy",
+  "ZA_path": "./embeddings_anomalous.npy",
+  "memory_path": "./AI_event_memory.json",
   "captions_normal": [
     "Audience member sitting calmly and listening to the presenter.",
     "Audience member sitting and taking notes.",
