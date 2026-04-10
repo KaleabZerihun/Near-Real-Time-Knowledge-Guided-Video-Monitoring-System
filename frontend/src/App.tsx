@@ -397,7 +397,7 @@ function App() {
             onChange={e => setCustomEventText(e.target.value)}
             placeholder="e.g. person falling, unattended bag, man entering restricted area"
             rows={3}
-            style={{ width: '100%', borderRadius: '10px', border: '1px solid #ccc', padding: '10px', marginTop: '8px', resize: 'vertical', fontFamily: 'inherit' }}
+            style={{ width: '95%', borderRadius: '10px', border: '1px solid #ccc', padding: '10px', marginTop: '8px', resize: 'vertical', fontFamily: 'inherit' }}
           />
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '10px' }}>
             <button
