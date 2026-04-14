@@ -275,6 +275,14 @@ def pipeline_latest(request: Request):
         "event_id": latest.get("event_id"),
         "updated_at": latest.get("updated_at"),
     }
+@router.get("/pipeline/perf")
+def pipeline_perf(request: Request):
+    """Live performance metrics: speed, inference time, E2E latency, throughput."""
+    runner = request.app.state.runner
+    if not runner:
+        return JSONResponse({"error": "runner not started"}, status_code=503)
+    return runner.get_perf()
+
 @router.get("/pipeline/history")
 def pipeline_history(limit: int = 300):
     rows = repository.get_recent_detections(limit=limit)

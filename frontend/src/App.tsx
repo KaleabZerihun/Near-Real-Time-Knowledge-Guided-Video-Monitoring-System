@@ -25,6 +25,19 @@ interface Toast {
   severity: string
 }
 
+interface PerfMetrics {
+  speed_fps: number | null
+  inference_ms: number | null
+  e2e_ms: number | null
+  throughput_clips_per_sec: number | null
+  queue_depth: number | null
+  dropped_frames: number | null
+  dropped_batches: number | null
+}
+
+const fmtVal = (v: number | null, unit: string): string =>
+  v == null ? '—' : `${v % 1 === 0 ? v : v.toFixed(1)}${unit}`
+
 function App() {
   const [pipelineEnabled, setPipelineEnabled] = useState<boolean | null>(null)
   const [vadStatus, setVadStatus] = useState('waiting...')
@@ -32,6 +45,7 @@ function App() {
   const [points, setPoints] = useState<VADPoint[]>([])
   const [loggerEvents, setLoggerEvents] = useState<LoggerEvent[]>([])
   const [toasts, setToasts] = useState<Toast[]>([])
+  const [perf, setPerf] = useState<PerfMetrics | null>(null)
   const [avgText, setAvgText] = useState('Rolling average: waiting...')
   const [customEventText, setCustomEventText] = useState('')
   const [customEventLoading, setCustomEventLoading] = useState(false)
@@ -275,6 +289,21 @@ function App() {
   }, [points])
 
   useEffect(() => {
+    const fetchPerf = async () => {
+      try {
+        const res = await fetch('/pipeline/perf')
+        if (res.ok) {
+          const data = await res.json()
+          setPerf(data)
+        }
+      } catch { /* ignore */ }
+    }
+    fetchPerf()
+    const id = setInterval(fetchPerf, 3000)
+    return () => clearInterval(id)
+  }, [])
+
+  useEffect(() => {
     const checkStatus = async () => {
       try {
         const res = await fetch('/status')
@@ -468,6 +497,39 @@ function App() {
               })
             )}
           </div>
+        </div>
+        <div className="card metrics-card">
+          <h3>Performance Metrics</h3>
+          <div className="muted" style={{ marginBottom: '12px' }}>Live pipeline stats · updates every 3 s</div>
+          <div className="perf-tiles">
+            <div className="perf-tile">
+              <div className="perf-tile__value">{fmtVal(perf?.speed_fps ?? null, ' fps')}</div>
+              <div className="perf-tile__label">Speed</div>
+              <div className="perf-tile__sub">selected frames / sec</div>
+            </div>
+            <div className="perf-tile">
+              <div className="perf-tile__value">{fmtVal(perf?.inference_ms ?? null, ' ms')}</div>
+              <div className="perf-tile__label">VAD Inference</div>
+              <div className="perf-tile__sub">AI model time per clip</div>
+            </div>
+            <div className="perf-tile">
+              <div className="perf-tile__value">{fmtVal(perf?.e2e_ms ?? null, ' ms')}</div>
+              <div className="perf-tile__label">E2E Latency</div>
+              <div className="perf-tile__sub">capture → result ready</div>
+            </div>
+            <div className="perf-tile">
+              <div className="perf-tile__value">{fmtVal(perf?.throughput_clips_per_sec ?? null, '/s')}</div>
+              <div className="perf-tile__label">Throughput</div>
+              <div className="perf-tile__sub">clips processed / sec</div>
+            </div>
+          </div>
+          {perf && (
+            <div className="perf-footer muted">
+              Queue {perf.queue_depth ?? '—'} &nbsp;|&nbsp;
+              Dropped frames {perf.dropped_frames ?? '—'} &nbsp;|&nbsp;
+              Dropped batches {perf.dropped_batches ?? '—'}
+            </div>
+          )}
         </div>
         {/*
         <div>

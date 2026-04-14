@@ -35,6 +35,9 @@ class PipelineRunner:
         # Keep it bounded so it doesn't grow forever.
         #overtime performance
         self._confidence_history: deque[Tuple[float, float]] = deque(maxlen=600)
+        self._latest_inference_ms: Optional[float] = None
+        self._latest_e2e_ms: Optional[float] = None
+
     # run the frame selecor
     def start(self) -> None:
         self._run_id = repository.create_run(
@@ -70,6 +73,22 @@ class PipelineRunner:
     def latest_frame(self):
         with self._lock:
             return None if self._latest_frame_bgr is None else self._latest_frame_bgr.copy()
+
+    def get_perf(self) -> Dict[str, Any]:
+        m = self.selector.get_metrics()
+        with self._lock:
+            inf_ms = self._latest_inference_ms
+            e2e_ms = self._latest_e2e_ms
+        throughput = round(1000.0 / inf_ms, 2) if inf_ms and inf_ms > 0 else None
+        return {
+            "speed_fps": round(m.selected_fps_est, 2),
+            "inference_ms": round(inf_ms, 1) if inf_ms is not None else None,
+            "e2e_ms": round(e2e_ms, 1) if e2e_ms is not None else None,
+            "throughput_clips_per_sec": throughput,
+            "queue_depth": m.batch_queue_size,
+            "dropped_frames": m.dropped_frames,
+            "dropped_batches": m.dropped_batches,
+        }
 
     def _overlay(self, frame_bgr, vad_out: VADOutput | None):
         if frame_bgr is None:
@@ -111,8 +130,14 @@ class PipelineRunner:
                 time.sleep(0.01)
                 continue
 
-            # ---- Sponsor VAD runs here ----
+            # ---- VAD inference (timed) ----
+            _t0 = time.time()
             vad_out: VADOutput = self.vad.predict(batch)
+            _inference_ms = (time.time() - _t0) * 1000
+            _e2e_ms = (time.time() - batch.ts_start) * 1000
+            with self._lock:
+                self._latest_inference_ms = _inference_ms
+                self._latest_e2e_ms = _e2e_ms
             last_vad = vad_out
 #####################################################################################
             # KG stub (Sprint 1)
@@ -218,7 +243,7 @@ class PipelineRunner:
                 metrics = self.selector.get_metrics()
                 repository.insert_system_metric(
                     run_id=self._run_id,
-                    inference_ms=None,
+                    inference_ms=_inference_ms,
                     fps=getattr(metrics, "selected_fps_est", None),
                     queue_depth=getattr(metrics, "batch_queue_size", None),
                     detections_cnt=1 if vad_out.label and vad_out.label.lower() != "normal" else 0,
