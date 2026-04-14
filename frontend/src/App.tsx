@@ -441,6 +441,16 @@ function App() {
               <span style={{ color: '#2d2d2d', fontSize: '12px' }}>{customEventFeedback}</span>
             )}
           </div>
+
+          <div style={{ marginTop: '18px', borderTop: '1px solid #e0d8f8', paddingTop: '14px' }}>
+            <div style={{ fontWeight: 600, fontSize: '13px', color: '#1a237e', marginBottom: '8px' }}>Performance Metrics</div>
+            <div className="perf-inline-list">
+              <span>Speed</span><span>{fmtVal(perf?.speed_fps ?? null, ' fps')}</span>
+              <span>VAD Inference</span><span>{fmtVal(perf?.inference_ms ?? null, ' ms')}</span>
+              <span>E2E Latency</span><span>{fmtVal(perf?.e2e_ms ?? null, ' ms')}</span>
+              <span>Throughput</span><span>{fmtVal(perf?.throughput_clips_per_sec ?? null, '/s')}</span>
+            </div>
+          </div>
         </div>
         <div className='divider-h-container' style={{ gridArea: 'eye-zone' }}>
           <Divider orientation="horizontal" className='divider-h' />
@@ -497,39 +507,6 @@ function App() {
               })
             )}
           </div>
-        </div>
-        <div className="card metrics-card">
-          <h3>Performance Metrics</h3>
-          <div className="muted" style={{ marginBottom: '12px' }}>Live pipeline stats · updates every 3 s</div>
-          <div className="perf-tiles">
-            <div className="perf-tile">
-              <div className="perf-tile__value">{fmtVal(perf?.speed_fps ?? null, ' fps')}</div>
-              <div className="perf-tile__label">Speed</div>
-              <div className="perf-tile__sub">selected frames / sec</div>
-            </div>
-            <div className="perf-tile">
-              <div className="perf-tile__value">{fmtVal(perf?.inference_ms ?? null, ' ms')}</div>
-              <div className="perf-tile__label">VAD Inference</div>
-              <div className="perf-tile__sub">AI model time per clip</div>
-            </div>
-            <div className="perf-tile">
-              <div className="perf-tile__value">{fmtVal(perf?.e2e_ms ?? null, ' ms')}</div>
-              <div className="perf-tile__label">E2E Latency</div>
-              <div className="perf-tile__sub">capture → result ready</div>
-            </div>
-            <div className="perf-tile">
-              <div className="perf-tile__value">{fmtVal(perf?.throughput_clips_per_sec ?? null, '/s')}</div>
-              <div className="perf-tile__label">Throughput</div>
-              <div className="perf-tile__sub">clips processed / sec</div>
-            </div>
-          </div>
-          {perf && (
-            <div className="perf-footer muted">
-              Queue {perf.queue_depth ?? '—'} &nbsp;|&nbsp;
-              Dropped frames {perf.dropped_frames ?? '—'} &nbsp;|&nbsp;
-              Dropped batches {perf.dropped_batches ?? '—'}
-            </div>
-          )}
         </div>
         {/*
         <div>

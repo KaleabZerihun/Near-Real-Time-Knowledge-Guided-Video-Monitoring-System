@@ -1,4 +1,5 @@
 RT-VAD/embeddings/**/*.npy
+**/*.npy
 backend/.checkpoints/*
 backend/models/*
 **/*.pth
