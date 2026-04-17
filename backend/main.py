@@ -6,6 +6,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, Response, FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from fastapi.staticfiles import StaticFiles
 
@@ -25,7 +26,56 @@ except ModuleNotFoundError as e:
     PipelineRunner = None  # type: ignore
     print(f"[WARN] PipelineRunner disabled (missing dependency): {e}")
 
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in ("1", "true", "yes")
+
+
+def _env_int(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except ValueError:
+        return default
+
+
+def _parse_resize_hw(value: str) -> tuple[int, int]:
+    try:
+        parts = [int(x.strip()) for x in value.split(",") if x.strip()]
+        if len(parts) == 2:
+            return (parts[0], parts[1])
+    except ValueError:
+        pass
+    return (224, 224)
+
+
 app = FastAPI(title="Near Real-Time Knowledge-Guided Video Monitoring")
+
+# Configure CORS for Amplify frontend and other allowed origins
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "*").split(",")
+allowed_origins = [origin.strip() for origin in allowed_origins if origin.strip()]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 repo_root = THIS_DIR.parent
 img_dir = repo_root / "images"
@@ -53,24 +103,30 @@ def startup() -> None:
     default_db_path = (THIS_DIR / "data" / "app.db").resolve()
     database_url = os.getenv("DATABASE_URL", f"sqlite:///{default_db_path.as_posix()}")
 
-    # Ensure DB + tables exist
+    # Ensure DB + tables exist when using sqlite
     init_db(database_url)
 
-    # If ML deps missing, skip runner but keep API/Dashboard alive
-    if PipelineRunner is None:
-        print("[WARN] Skipping PipelineRunner startup; API will run without pipeline.")
+    if not _env_bool("RUN_PIPELINE", True):
+        print("[INFO] RUN_PIPELINE=false; skipping PipelineRunner startup.")
         runner = None
         return
 
+    # Video source can be a webcam index or a remote source path / file path.
+    video_source = os.getenv("VIDEO_SOURCE", "0")
+    try:
+        source = int(video_source)
+    except ValueError:
+        source = video_source
+
     cfg = FrameSelectorConfig(
-        source=0,  # which webcam
-        source_id="webcam0",
-        target_fps=8.0,        # how many fps
-        resize_hw=(224, 224),  # resize frames for vad model input
-        clip_len=16,           # how batches are formed
-        stride=8,
-        frame_ring_maxlen=256, # buffer size
-        max_batches=8,         # queue size
+        source=source,
+        source_id=os.getenv("VIDEO_SOURCE_ID", "webcam0"),
+        target_fps=_env_float("TARGET_FPS", 8.0),
+        resize_hw=_parse_resize_hw(os.getenv("RESIZE_HW", "224,224")),
+        clip_len=_env_int("CLIP_LEN", 16),
+        stride=_env_int("STRIDE", 8),
+        frame_ring_maxlen=_env_int("FRAME_RING_MAXLEN", 256),
+        max_batches=_env_int("MAX_BATCHES", 8),
     )
 
     runner = PipelineRunner(cfg=cfg, rtvad_root=str(rtvad_root))

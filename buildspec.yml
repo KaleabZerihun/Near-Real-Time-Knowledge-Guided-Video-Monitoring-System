@@ -1,0 +1,21 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.13
+    commands:
+      - echo "Installing Python dependencies..."
+      - pip install -r backend/requirements.txt
+  build:
+    commands:
+      - echo "Build phase complete - backend will be served by Elastic Beanstalk"
+
+artifacts:
+  files:
+    - '**/*'
+  name: BackendBuild
+
+cache:
+  paths:
+    - '/root/.cache/pip/**/*'
