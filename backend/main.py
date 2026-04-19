@@ -121,7 +121,7 @@ def startup() -> None:
     cfg = FrameSelectorConfig(
         source=source,
         source_id=os.getenv("VIDEO_SOURCE_ID", "webcam0"),
-        target_fps=_env_float("TARGET_FPS", 8.0),
+        select_every=_env_int("SELECT_EVERY", 2),
         resize_hw=_parse_resize_hw(os.getenv("RESIZE_HW", "224,224")),
         clip_len=_env_int("CLIP_LEN", 16),
         stride=_env_int("STRIDE", 8),

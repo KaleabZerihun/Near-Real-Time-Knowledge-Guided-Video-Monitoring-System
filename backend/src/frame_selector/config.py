@@ -10,7 +10,7 @@ class FrameSelectorConfig:
     source_id: str = "webcam0"
 
     # Selection / sampling
-    target_fps: float = 8.0
+    select_every: int = 2
 
     # Preprocessing
     resize_hw: Tuple[int, int] = (224, 224)  # (H, W)

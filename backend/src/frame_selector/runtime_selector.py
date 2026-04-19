@@ -15,7 +15,7 @@ class FrameSelector(IFrameSelector):
     # Frame Selector runtime:
     #   - Captures frames from an OpenCV source
     #   - Resizes frames
-    #   - Applies frame selection (target_fps sampling;)
+    #   - Applies frame selection (sample_every_n_frames sampling;)
     #   - Buffers selected frames in a bounded ring buffer (backpressure)
     #   - Builds ClipBatch outputs using clip_len and stride
     #   - Enqueues batches in a bounded queue with drop-oldest policy (backpressure)
@@ -44,7 +44,7 @@ class FrameSelector(IFrameSelector):
         self._batch_thread: Optional[threading.Thread] = None
 
         # frame selection sampler (time-based downsampling)
-        self._sampler = FrameSampler(target_fps=self.cfg.target_fps)
+        self._sampler = FrameSampler(select_every=self.cfg.select_every)
 
         # counters
         self._dropped_batches = 0  # counts batches dropped by queue policy OR failed pushes
@@ -160,7 +160,7 @@ class FrameSelector(IFrameSelector):
                 self._cap_fps_last_ts = now
 
             # Frame Selection — only push selected frames to ring
-            if not self._sampler.should_select(ts):
+            if not self._sampler.should_select():
                 self._maybe_log_status()
                 continue
 
