@@ -17,8 +17,38 @@ frontend:
 
 services:
   backend:
-    # Backend service for real-time video processing
-    sourceLocation: buildspec.backend.yml
+    buildSpec: |
+      version: 0.2
+      phases:
+        install:
+          runtime-versions:
+            python: 3.13
+            docker: 24
+          commands:
+            - echo "Installing Python dependencies..."
+            - pip install --upgrade pip
+            - pip install -r requirements.txt
+            - pip install -r backend/requirements.txt
+            - pip install transformers scikit-learn matplotlib seaborn
+            - echo "Setting up Docker build environment..."
+        build:
+          commands:
+            - echo "Building backend container..."
+            - cd backend
+            - docker build -t backend .
+            - echo "Container built successfully"
+        post_build:
+          commands:
+            - echo "Backend container ready for deployment"
+            - docker images
+      artifacts:
+        files:
+          - '**/*'
+        name: BackendContainerBuild
+      cache:
+        paths:
+          - '/root/.cache/pip/**/*'
+          - '/root/.cache/docker/**/*'
     containerConfig:
       image: backend:latest
       port: 8000
