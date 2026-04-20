@@ -1,0 +1,36 @@
+version: 1
+frontend:
+  phases:
+    preBuild:
+      commands:
+        - cd frontend && npm ci
+    build:
+      commands:
+        - cd frontend && npm run build
+  artifacts:
+    baseDirectory: frontend/dist
+    files:
+      - '**/*'
+  cache:
+    paths:
+      - frontend/node_modules/**/*
+
+services:
+  backend:
+    # Backend service for real-time video processing
+    sourceLocation: buildspec.backend.yml
+    containerConfig:
+      image: backend:latest
+      port: 8000
+      environment:
+        DATABASE_URL: sqlite:////app/data/app.db
+        RUN_PIPELINE: "true"
+        VIDEO_SOURCE: "0"
+        TARGET_FPS: "8.0"
+        RESIZE_HW: "224,224"
+        CLIP_LEN: "16"
+        STRIDE: "8"
+        FRAME_RING_MAXLEN: "256"
+        MAX_BATCHES: "8"
+        ANOMALY_THRESHOLD: "0.5"
+        TOP_K: "10"

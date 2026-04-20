@@ -5,6 +5,7 @@ python-dotenv
 numpy
 opencv-python
 fastapi
+python-multipart
 uvicorn
 torch
 torchvision

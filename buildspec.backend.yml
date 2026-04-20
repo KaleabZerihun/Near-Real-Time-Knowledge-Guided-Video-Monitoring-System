@@ -3,7 +3,8 @@ version: 0.2
 phases:
   install:
     runtime-versions:
-      python: 3.12
+      python: 3.13
+      docker: 24
     commands:
       - echo "Installing Python dependencies..."
       - pip install --upgrade pip
@@ -11,19 +12,26 @@ phases:
       - pip install -r backend/requirements.txt
       # Install additional ML dependencies
       - pip install transformers scikit-learn matplotlib seaborn
+      - echo "Setting up Docker build environment..."
+
   build:
     commands:
-      - echo "Building application..."
-      - python backend/src/db/init_db.py
+      - echo "Building backend container..."
+      - cd backend
+      - docker build -t backend .
+      - echo "Container built successfully"
+
   post_build:
     commands:
-      - echo "Application built successfully"
+      - echo "Backend container ready for deployment"
+      - docker images
 
 artifacts:
   files:
     - '**/*'
-  name: BackendBuild
+  name: BackendContainerBuild
 
 cache:
   paths:
     - '/root/.cache/pip/**/*'
+    - '/root/.cache/docker/**/*'

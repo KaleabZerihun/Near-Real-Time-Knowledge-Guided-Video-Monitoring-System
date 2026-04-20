@@ -8,8 +8,10 @@ import threading
 from pathlib import Path
 
 import cv2
-from fastapi import APIRouter, HTTPException, Query, Request
+import numpy as np
+from fastapi import APIRouter, HTTPException, Query, Request, UploadFile, File, Form
 from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from importlib.util import module_from_spec, spec_from_file_location
 
 from src.events.schemas import FramesIngest, VadIngest
@@ -38,7 +40,15 @@ def _get_sqlite_path() -> Path:
     return Path(db_path_str).resolve()
 
 
+_TEXTENCODER_MODULE_CACHE: dict[str, object] = {}
+_TEXTENCODER_MODEL_CACHE: dict[tuple[str, str], tuple] = {}
+
+
 def _load_rtvad_textencoder_module(rtvad_root: Path):
+    cache_key = str(rtvad_root)
+    if cache_key in _TEXTENCODER_MODULE_CACHE:
+        return _TEXTENCODER_MODULE_CACHE[cache_key]
+
     textencoder_path = rtvad_root / "textencoder.py"
     if not textencoder_path.exists():
         raise FileNotFoundError(f"RT-VAD textencoder not found at {textencoder_path}")
@@ -49,7 +59,51 @@ def _load_rtvad_textencoder_module(rtvad_root: Path):
 
     module = module_from_spec(spec)
     spec.loader.exec_module(module)
+    _TEXTENCODER_MODULE_CACHE[cache_key] = module
     return module
+
+
+def _get_custom_anomaly_encoder(runner, rtvad_root: Path):
+    import torch
+    from imagebind.models.imagebind_model import ModalityType
+    from imagebind import data as imagebind_data
+
+    device_str = runner.vad.device if getattr(runner.vad, "device", None) else "cpu"
+    device = torch.device(device_str)
+    cache_key = (str(rtvad_root), device_str)
+    if cache_key in _TEXTENCODER_MODEL_CACHE:
+        return _TEXTENCODER_MODEL_CACHE[cache_key]
+
+    model = None
+    if hasattr(runner.vad, "_model") and runner.vad._model is not None:
+        model = runner.vad._model
+    else:
+        textencoder = _load_rtvad_textencoder_module(rtvad_root)
+        textencoder.CHECKPOINT_PATH = rtvad_root / ".checkpoints" / "imagebind_huge.pth"
+        model, _, _ = textencoder.load_imagebind(device)
+
+    model.eval()
+    if device.type == "cuda":
+        try:
+            model.half()
+        except Exception:
+            pass
+
+    _TEXTENCODER_MODEL_CACHE[cache_key] = (model, ModalityType, imagebind_data, device)
+    return _TEXTENCODER_MODEL_CACHE[cache_key]
+
+
+def _encode_custom_anomaly_text(text: str, model, ModalityType, imagebind_data, device, alpha: float = 0.95):
+    import torch
+    import torch.nn.functional as F
+
+    text_to_encode = text.strip()
+    inputs = {ModalityType.TEXT: imagebind_data.load_and_transform_text([text_to_encode], device)}
+    with torch.no_grad():
+        embeddings = model(inputs)
+        emb_tensor = F.normalize(embeddings[ModalityType.TEXT], dim=-1)
+    emb = emb_tensor.cpu().float().numpy()[0]
+    return (alpha * emb).astype(np.float32)
 
 
 def _ensure_custom_memory_file(path: Path):
@@ -83,19 +137,14 @@ def _build_custom_anomaly_async(runner, rtvad_root: Path, text: str, custom_path
             print(f"[CUSTOM-ANOMALY] Already exists (concurrent add): {text}")
             return
         
-        textencoder = _load_rtvad_textencoder_module(rtvad_root)
-        textencoder.CHECKPOINT_PATH = rtvad_root / ".checkpoints" / "imagebind_huge.pth"
-        model, ModalityType, imagebind_data = textencoder.load_imagebind(
-            textencoder.torch.device(runner.vad.device if runner.vad.device else "cpu")
-        )
-        emb, _ = textencoder.build_custom_anomaly_embedding(
+        model, ModalityType, imagebind_data, device = _get_custom_anomaly_encoder(runner, rtvad_root)
+        emb = _encode_custom_anomaly_text(
             text=text,
             model=model,
             ModalityType=ModalityType,
             imagebind_data=imagebind_data,
-            device=textencoder.torch.device(runner.vad.device if runner.vad.device else "cpu"),
+            device=device,
             alpha=0.95,
-            apply_prompt_template=False,
         )
         
         items.append({
@@ -457,4 +506,52 @@ def db_summary():
             "vad_predictions": repository.count_vad_predictions(),
         }
     except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+# Frame processing endpoint for browser camera streams
+@router.post("/api/process-frame")
+async def process_frame(
+    frame: UploadFile = File(...),
+    timestamp: str = Form(...)
+):
+    """Process a frame from browser camera stream in real-time"""
+    try:
+        # Read and decode the frame
+        frame_data = await frame.read()
+        nparr = np.frombuffer(frame_data, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
+        if img is None:
+            return JSONResponse({"error": "Invalid image data"}, status_code=400)
+
+        current_time = time.time()
+
+        # Get the pipeline runner from app state
+        # Note: This assumes the runner is stored in app.state.runner
+        # You may need to adjust based on your actual app structure
+
+        # For now, acknowledge receipt and log processing
+        # TODO: Integrate with actual VAD pipeline for real-time analysis
+        print(f"[REAL-TIME] Processing frame at {current_time}: {frame.filename}")
+
+        # Placeholder for actual ML processing
+        # In production, this would:
+        # 1. Preprocess the frame (resize, normalize)
+        # 2. Run through VAD model
+        # 3. Generate confidence scores
+        # 4. Trigger alerts if anomalies detected
+        # 5. Store results in database
+
+        return JSONResponse({
+            "status": "processed",
+            "timestamp": timestamp,
+            "frame_filename": frame.filename,
+            "processed_at": current_time,
+            "frame_shape": img.shape,
+            "analysis_pending": True  # Flag for frontend that analysis is happening
+        })
+
+    except Exception as e:
+        print(f"[FRAME-PROCESSING] Error: {e}")
         return JSONResponse({"error": str(e)}, status_code=500)

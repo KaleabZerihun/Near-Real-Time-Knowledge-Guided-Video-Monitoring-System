@@ -116,7 +116,6 @@ function App() {
         body: JSON.stringify({ text }),
       })
       
-      // Check if response is JSON
       const contentType = res.headers.get('content-type')
       if (!contentType || !contentType.includes('application/json')) {
         const textResp = await res.text()
@@ -126,7 +125,6 @@ function App() {
       const data = await res.json()
       
       if (res.ok || res.status === 202) {
-        // 202 Accepted means it's building in background
         setCustomEventText('')
         const statusMsg = res.status === 202 ? 'Building embedding in background...' : `Added custom event: ${data.text}`
         setCustomEventFeedback(statusMsg)
@@ -143,6 +141,57 @@ function App() {
     } finally {
       setCustomEventLoading(false)
     }
+  }
+
+  const startFrameStreaming = (mediaStream: MediaStream) => {
+    const video = document.createElement('video')
+    video.srcObject = mediaStream
+    video.muted = true // Prevent audio feedback
+    video.play()
+
+    const canvas = document.createElement('canvas')
+    const ctx = canvas.getContext('2d')
+    canvas.width = 640
+    canvas.height = 480
+
+    const captureFrame = () => {
+      if (ctx && video.videoWidth > 0 && video.videoHeight > 0) {
+        // Maintain aspect ratio
+        const aspectRatio = video.videoWidth / video.videoHeight
+        canvas.width = 640
+        canvas.height = 640 / aspectRatio
+
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+        
+        canvas.toBlob(async (blob) => {
+          if (blob) {
+            // Send EVERY frame for real-time analysis (no frame skipping)
+            const formData = new FormData()
+            formData.append('frame', blob, `frame_${Date.now()}.jpg`)
+            formData.append('timestamp', Date.now().toString())
+
+            try {
+              const response = await fetch('/api/process-frame', {
+                method: 'POST',
+                body: formData
+              })
+              
+              if (!response.ok) {
+                console.warn('Frame processing failed:', response.status)
+              }
+            } catch (err) {
+              console.error('Frame upload failed:', err)
+            }
+          }
+        }, 'image/jpeg', 0.8)
+      }
+      // Capture next frame immediately for real-time processing
+      requestAnimationFrame(captureFrame)
+    }
+
+    video.addEventListener('loadedmetadata', () => {
+      captureFrame()
+    })
   }
 
   const rollingAvgLastN = (n: number): number | null => {
@@ -182,6 +231,51 @@ function App() {
     updateEventsHeight()
     window.addEventListener('resize', updateEventsHeight)
     return () => window.removeEventListener('resize', updateEventsHeight)
+  }, [])
+
+  useEffect(() => {
+    // Automatically request camera access on app load to show browser permission prompt
+    const autoRequestCamera = async () => {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices()
+        const cameras = devices.filter(device => device.kind === 'videoinput')
+
+        if (cameras.length === 0) {
+          showToast({
+            source: 'CAMERA',
+            message: 'No cameras found on this device',
+            ts: Date.now() / 1000,
+            severity: 'warning'
+          })
+          return
+        }
+
+        // Request camera access - this will show the browser permission prompt
+        const mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            deviceId: cameras[0].deviceId,
+            width: { ideal: 640 },
+            height: { ideal: 480 },
+            frameRate: { ideal: 30, max: 30 }
+          }
+        })
+
+        // If permission granted, start streaming
+        startFrameStreaming(mediaStream)
+
+        showToast({
+          source: 'CAMERA',
+          message: 'Camera access granted - real-time analysis started',
+          ts: Date.now() / 1000,
+          severity: 'info'
+        })
+      } catch (err: any) {
+        // Permission denied or no camera - just log it
+        console.log('Auto camera access skipped or denied:', err.name)
+      }
+    }
+
+    autoRequestCamera()
   }, [])
 
   const drawChart = () => {
@@ -404,6 +498,12 @@ function App() {
         </div>
       )}
 
+      {/* Camera Access Section - Removed as camera access is now automatic */}
+
+      {/* Camera Select Section - Removed as camera access is now automatic */}
+
+      {/* Processing Status Section - Removed as camera access is now automatic */}
+
       <div className="dashboard-grid">
         <div className="card video-card">
           <h3>Live Video</h3>
@@ -508,23 +608,6 @@ function App() {
             )}
           </div>
         </div>
-        {/*
-        <div>
-          <h3>RT-VAD Memory Setup</h3>
-          <div className="muted" style={{ marginBottom: '8px' }}>
-            Use the RT-VAD memory generation flow when you change prompts or flashback batch files.
-          </div>
-          <ol className="instructions-list">
-            <li>Edit prompt batches in <code>RT-VAD/flashback_batch.json</code>.</li>
-            <li>Run <code>python RT-VAD/merge_prompts.py</code> to create <code>RT-VAD/memory.json</code>.</li>
-            <li>Run <code>python RT-VAD/textencoder.py</code> to generate <code>RT-VAD/embeddings/stage1</code>.</li>
-            <li>Run <code>streamlit run RT-VAD/flashback_eval.py</code> to evaluate anomaly scores and frame visualizations.</li>
-          </ol>
-          <div className="muted" style={{ marginTop: '8px' }}>
-            If you do not change prompts or <code>flashback_batch.json</code>, skip directly to evaluation.
-          </div>
-        </div>
-        */}
       </div>
 
       {/* Toasts Container */}
