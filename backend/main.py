@@ -129,8 +129,12 @@ def startup() -> None:
         max_batches=_env_int("MAX_BATCHES", 8),
     )
 
-    runner = PipelineRunner(cfg=cfg, rtvad_root=str(rtvad_root))
-    runner.start()
+    try:
+        runner = PipelineRunner(cfg=cfg, rtvad_root=str(rtvad_root))
+        runner.start()
+    except Exception as e:
+        print(f"[WARN] PipelineRunner failed to start: {e}")
+        runner = None
 
 
 @app.on_event("shutdown")

@@ -20,6 +20,11 @@ from src.db import repository
 
 router = APIRouter()
 
+# Fallback frame store for browser-uploaded frames when pipeline runner is unavailable.
+_latest_uploaded_frame = None
+_latest_uploaded_frame_ts = 0.0
+_latest_uploaded_frame_lock = threading.Lock()
+
 def _default_db_url_like_main_py() -> str:
     backend_dir = Path(__file__).resolve().parents[2]
     default_db_path = (backend_dir / "data" / "app.db").resolve()
@@ -392,14 +397,17 @@ def pipeline_stream(request: Request):
 @router.get("/video/mjpeg")
 def video_mjpeg(request: Request): 
     runner = request.app.state.runner
-    if not runner:
-        return JSONResponse({"error": "runner not started"}, status_code=503)
 
     boundary = "frame"
 
     def gen():
         while True:
-            frame = runner.latest_frame()
+            frame = runner.latest_frame() if runner else None
+
+            if frame is None:
+                with _latest_uploaded_frame_lock:
+                    frame = None if _latest_uploaded_frame is None else _latest_uploaded_frame.copy()
+
             if frame is None:
                 time.sleep(0.03)
                 continue
@@ -527,6 +535,11 @@ async def process_frame(
 
         current_time = time.time()
 
+        with _latest_uploaded_frame_lock:
+            global _latest_uploaded_frame, _latest_uploaded_frame_ts
+            _latest_uploaded_frame = img
+            _latest_uploaded_frame_ts = current_time
+
         # Get the pipeline runner from app state
         # Note: This assumes the runner is stored in app.state.runner
         # You may need to adjust based on your actual app structure
@@ -549,6 +562,7 @@ async def process_frame(
             "frame_filename": frame.filename,
             "processed_at": current_time,
             "frame_shape": img.shape,
+            "frame_source": "browser_upload",
             "analysis_pending": True  # Flag for frontend that analysis is happening
         })
 

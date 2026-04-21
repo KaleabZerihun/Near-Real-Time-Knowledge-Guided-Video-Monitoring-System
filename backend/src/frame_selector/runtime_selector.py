@@ -1,4 +1,5 @@
 from __future__ import annotations
+import os
 import time
 import threading
 from typing import Optional
@@ -67,7 +68,14 @@ class FrameSelector(IFrameSelector):
     # ------------------ public API ------------------
 
     def start(self) -> None:
-        self._cap = cv2.VideoCapture(self.cfg.source)
+        if os.name == "nt" and isinstance(self.cfg.source, int):
+            self._cap = cv2.VideoCapture(self.cfg.source, cv2.CAP_DSHOW)
+            if not self._cap.isOpened():
+                self._cap.release()
+                self._cap = cv2.VideoCapture(self.cfg.source)
+        else:
+            self._cap = cv2.VideoCapture(self.cfg.source)
+
         if not self._cap.isOpened():
             raise RuntimeError(f"Could not open video source: {self.cfg.source}")
 
@@ -134,12 +142,22 @@ class FrameSelector(IFrameSelector):
         self._cap_fps_frames = 0
         self._sel_fps_last_ts = 0.0
         self._sel_fps_frames = 0
+        consecutive_read_failures = 0
 
         while not self._stop.is_set():
             ok, frame = self._cap.read()
             if not ok or frame is None:
-                time.sleep(0.01)
+                consecutive_read_failures += 1
+                if consecutive_read_failures % 30 == 0:
+                    print(
+                        f"[FrameSelector] warning: {consecutive_read_failures} consecutive capture read failures "
+                        f"for source={self.cfg.source}"
+                    )
+                # Back off slightly on repeated failures to avoid hot-looping and log spam.
+                time.sleep(0.05)
                 continue
+
+            consecutive_read_failures = 0
 
             ts = time.time()
 
