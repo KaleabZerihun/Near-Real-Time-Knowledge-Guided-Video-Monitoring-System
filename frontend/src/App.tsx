@@ -38,6 +38,12 @@ interface PerfMetrics {
 const fmtVal = (v: number | null, unit: string): string =>
   v == null ? '—' : `${v % 1 === 0 ? v : v.toFixed(1)}${unit}`
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '')
+const apiUrl = (path: string): string => {
+  if (!API_BASE_URL) return path
+  return `${API_BASE_URL}${path}`
+}
+
 function App() {
   const [pipelineEnabled, setPipelineEnabled] = useState<boolean | null>(null)
   const [browserUploadMode, setBrowserUploadMode] = useState(false)
@@ -124,7 +130,7 @@ function App() {
       if (customEventRequestTokenRef.current !== requestToken) return
 
       try {
-        const res = await fetch(`/pipeline/custom-anomaly/status?text=${encodeURIComponent(text)}`)
+        const res = await fetch(apiUrl(`/pipeline/custom-anomaly/status?text=${encodeURIComponent(text)}`))
         if (!res.ok) continue
 
         const data = await res.json()
@@ -159,7 +165,7 @@ function App() {
     const requestToken = customEventRequestTokenRef.current + 1
     customEventRequestTokenRef.current = requestToken
     try {
-      const res = await fetch('/pipeline/custom-anomaly', {
+      const res = await fetch(apiUrl('/pipeline/custom-anomaly'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),
@@ -364,7 +370,7 @@ function App() {
   useEffect(() => {
     const fetchPerf = async () => {
       try {
-        const res = await fetch('/pipeline/perf')
+        const res = await fetch(apiUrl('/pipeline/perf'))
         if (res.ok) {
           const data = await res.json()
           setPerf(data)
@@ -379,7 +385,7 @@ function App() {
   useEffect(() => {
     const checkStatus = async () => {
       try {
-        const res = await fetch('/status')
+        const res = await fetch(apiUrl('/status'))
         const data = await res.json()
         setPipelineEnabled(data.pipeline_enabled)
         setBrowserUploadMode(String(data.video_source || '').toLowerCase() === 'browser_upload')
@@ -393,7 +399,7 @@ function App() {
 
         // Load initial history
         try {
-          const histRes = await fetch('/pipeline/history?limit=300')
+          const histRes = await fetch(apiUrl('/pipeline/history?limit=300'))
           const hist = await histRes.json()
           if (hist.points && Array.isArray(hist.points)) {
             hist.points.forEach((p: any) => pushPoint(p.t ?? p.x, p.confidence ?? p.y))
@@ -403,7 +409,7 @@ function App() {
         }
 
         // Connect to EventSource
-        const es = new EventSource('/pipeline/stream')
+        const es = new EventSource(apiUrl('/pipeline/stream'))
 
         es.onopen = () => {
           setVadStatus('VAD: SSE connected...')
@@ -527,7 +533,7 @@ function App() {
             formData.append('frame', blob, 'frame.jpg')
             formData.append('timestamp', String(Date.now()))
 
-            await fetch('/api/process-frame', {
+            await fetch(apiUrl('/api/process-frame'), {
               method: 'POST',
               body: formData,
             })
@@ -587,7 +593,7 @@ function App() {
               />
             )}
             {pipelineEnabled && !browserUploadMode && (
-              <img id="videoImg" src="/video/mjpeg" alt="Live video stream" />
+              <img id="videoImg" src={apiUrl('/video/mjpeg')} alt="Live video stream" />
             )}
           </div>
           <canvas ref={uploadCanvasRef} style={{ display: 'none' }} />
