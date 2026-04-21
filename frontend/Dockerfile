@@ -13,6 +13,8 @@ RUN npm run build
 # ─── Stage 2: Serve with nginx ────────────────────────────────────────────────
 FROM nginx:alpine AS runtime
 
+ENV BACKEND_URL=http://host.docker.internal:8000
+
 RUN rm -rf /usr/share/nginx/html/*
 COPY --from=builder /app/dist /usr/share/nginx/html
 COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf

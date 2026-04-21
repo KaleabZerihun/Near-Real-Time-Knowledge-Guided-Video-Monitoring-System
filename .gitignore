@@ -45,3 +45,8 @@ build/
 .elasticbeanstalk/*
 !.elasticbeanstalk/*.cfg.yml
 !.elasticbeanstalk/*.global.yml
+
+# amplify
+.amplify
+amplify_outputs*
+amplifyconfiguration*

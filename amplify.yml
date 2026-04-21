@@ -14,53 +14,6 @@ frontend:
   cache:
     paths:
       - frontend/node_modules/**/*
-
-services:
-  backend:
-    buildSpec: |
-      version: 0.2
-      phases:
-        install:
-          runtime-versions:
-            python: 3.13
-            docker: 24
-          commands:
-            - echo "Installing Python dependencies..."
-            - pip install --upgrade pip
-            - pip install -r requirements.txt
-            - pip install -r backend/requirements.txt
-            - pip install transformers scikit-learn matplotlib seaborn
-            - echo "Setting up Docker build environment..."
-        build:
-          commands:
-            - echo "Building backend container..."
-            - cd backend
-            - docker build -t backend .
-            - echo "Container built successfully"
-        post_build:
-          commands:
-            - echo "Backend container ready for deployment"
-            - docker images
-      artifacts:
-        files:
-          - '**/*'
-        name: BackendContainerBuild
-      cache:
-        paths:
-          - '/root/.cache/pip/**/*'
-          - '/root/.cache/docker/**/*'
-    containerConfig:
-      image: backend:latest
-      port: 8000
-      environment:
-        DATABASE_URL: sqlite:////app/data/app.db
-        RUN_PIPELINE: "true"
-        VIDEO_SOURCE: "0"
-        TARGET_FPS: "8.0"
-        RESIZE_HW: "224,224"
-        CLIP_LEN: "16"
-        STRIDE: "8"
-        FRAME_RING_MAXLEN: "256"
-        MAX_BATCHES: "8"
-        ANOMALY_THRESHOLD: "0.5"
-        TOP_K: "10"
+  env:
+    variables:
+      VITE_API_BASE_URL: https://nrt-video-backend-fixed.eba-bu4ukmxm.us-east-2.elasticbeanstalk.com
