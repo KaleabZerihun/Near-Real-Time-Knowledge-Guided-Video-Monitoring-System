@@ -130,6 +130,11 @@ def _save_custom_memory(path: Path, items):
         json.dump({"custom_anomalies": items}, f, ensure_ascii=False, indent=2)
 
 
+def _custom_anomaly_exists(items, text: str) -> bool:
+    normalized = text.strip().lower()
+    return any(item.get("text", "").strip().lower() == normalized for item in items)
+
+
 def _build_custom_anomaly_async(runner, rtvad_root: Path, text: str, custom_path: Path):
     """
     Background thread worker to build custom anomaly embedding without blocking the pipeline.
@@ -138,7 +143,7 @@ def _build_custom_anomaly_async(runner, rtvad_root: Path, text: str, custom_path
         items = _load_custom_memory(custom_path)
         
         # Check again in case another request added it
-        if any(item.get("text", "").strip().lower() == text.lower() for item in items):
+        if _custom_anomaly_exists(items, text):
             print(f"[CUSTOM-ANOMALY] Already exists (concurrent add): {text}")
             return
         
@@ -185,7 +190,7 @@ async def pipeline_custom_anomaly(request: Request):
         _ensure_custom_memory_file(custom_path)
         items = _load_custom_memory(custom_path)
 
-        if any(item.get("text", "").strip().lower() == text.lower() for item in items):
+        if _custom_anomaly_exists(items, text):
             return JSONResponse({"error": "This custom anomaly already exists"}, status_code=409)
 
         # Return immediately and build embedding in background thread
@@ -199,6 +204,28 @@ async def pipeline_custom_anomaly(request: Request):
         return JSONResponse({"added": True, "text": text, "status": "building_embedding"}, status_code=202)
     except Exception as e:
         print(f"[CUSTOM-ANOMALY] Route error: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@router.get("/pipeline/custom-anomaly/status")
+async def pipeline_custom_anomaly_status(request: Request, text: str = Query(...)):
+    try:
+        runner = request.app.state.runner
+        if not runner:
+            return JSONResponse({"error": "Pipeline is not running"}, status_code=503)
+
+        query_text = text.strip()
+        if not query_text:
+            return JSONResponse({"error": "Text is required"}, status_code=400)
+
+        rtvad_root = Path(runner.vad.rtvad_root)
+        custom_path = rtvad_root / "custom_anomaly_memory.json"
+        items = _load_custom_memory(custom_path)
+        ready = _custom_anomaly_exists(items, query_text)
+
+        return JSONResponse({"text": query_text, "ready": ready}, status_code=200)
+    except Exception as e:
+        print(f"[CUSTOM-ANOMALY] Status route error: {e}")
         return JSONResponse({"error": str(e)}, status_code=500)
 
 

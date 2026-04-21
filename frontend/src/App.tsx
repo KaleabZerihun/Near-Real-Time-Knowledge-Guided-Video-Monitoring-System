@@ -56,6 +56,7 @@ function App() {
   const eventSourceRef = useRef<EventSource | null>(null)
   const toastCounterRef = useRef(0)
   const loggerEventCounterRef = useRef(0)
+  const customEventRequestTokenRef = useRef(0)
 
   const AVG_WINDOW = 10
   const MAX_POINTS = 300
@@ -100,6 +101,46 @@ function App() {
     }, 6000)
   }
 
+  const clearCustomEventFeedbackAfterDelay = (message: string, delayMs = 5000) => {
+    window.setTimeout(() => {
+      setCustomEventFeedback(prev => (prev === message ? '' : prev))
+    }, delayMs)
+  }
+
+  const waitForCustomEventReady = async (text: string, requestToken: number) => {
+    const maxAttempts = 90
+    const pollDelayMs = 2000
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      if (customEventRequestTokenRef.current !== requestToken) return
+
+      await new Promise(resolve => window.setTimeout(resolve, pollDelayMs))
+      if (customEventRequestTokenRef.current !== requestToken) return
+
+      try {
+        const res = await fetch(`/pipeline/custom-anomaly/status?text=${encodeURIComponent(text)}`)
+        if (!res.ok) continue
+
+        const data = await res.json()
+        if (data.ready) {
+          const successMsg = `Added custom event: ${text}`
+          setCustomEventFeedback(successMsg)
+          showToast({ source: 'RT-VAD', message: successMsg, ts: Date.now() / 1000, severity: 'info' })
+          clearCustomEventFeedbackAfterDelay(successMsg)
+          return
+        }
+      } catch {
+        // Keep polling while backend is still warming up or network is transiently unavailable.
+      }
+    }
+
+    if (customEventRequestTokenRef.current !== requestToken) return
+    const timeoutMsg = 'Embedding build is taking longer than expected. It may still complete in the background.'
+    setCustomEventFeedback(timeoutMsg)
+    showToast({ source: 'RT-VAD', message: timeoutMsg, ts: Date.now() / 1000, severity: 'warning' })
+    clearCustomEventFeedbackAfterDelay(timeoutMsg, 8000)
+  }
+
   const createCustomEvent = async () => {
     const text = customEventText.trim()
     if (!text) {
@@ -109,6 +150,8 @@ function App() {
 
     setCustomEventLoading(true)
     setCustomEventFeedback('')
+    const requestToken = customEventRequestTokenRef.current + 1
+    customEventRequestTokenRef.current = requestToken
     try {
       const res = await fetch('/pipeline/custom-anomaly', {
         method: 'POST',
@@ -129,6 +172,11 @@ function App() {
         const statusMsg = res.status === 202 ? 'Building embedding in background...' : `Added custom event: ${data.text}`
         setCustomEventFeedback(statusMsg)
         showToast({ source: 'RT-VAD', message: statusMsg, ts: Date.now() / 1000, severity: 'info' })
+        if (res.status === 202) {
+          void waitForCustomEventReady(text, requestToken)
+        } else {
+          clearCustomEventFeedbackAfterDelay(statusMsg)
+        }
       } else {
         const msg = data.error || data.detail || 'Failed to add custom event'
         throw new Error(msg)
@@ -180,6 +228,12 @@ function App() {
     updateEventsHeight()
     window.addEventListener('resize', updateEventsHeight)
     return () => window.removeEventListener('resize', updateEventsHeight)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      customEventRequestTokenRef.current += 1
+    }
   }, [])
 
   const drawChart = () => {
