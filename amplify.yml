@@ -16,4 +16,4 @@ frontend:
       - frontend/node_modules/**/*
   env:
     variables:
-      VITE_API_BASE_URL: https://nrt-video-backend-fixed.eba-bu4ukmxm.us-east-2.elasticbeanstalk.com
+      VITE_API_BASE_URL: https://nrt-video-backend-recovery.us-east-2.elasticbeanstalk.com
