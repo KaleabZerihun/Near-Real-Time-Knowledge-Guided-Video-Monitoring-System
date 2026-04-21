@@ -263,6 +263,26 @@ function App() {
     uploadInFlightRef.current = false
   }
 
+  const requestCameraStream = async (): Promise<MediaStream> => {
+    const attempts: MediaStreamConstraints[] = [
+      { video: { facingMode: { ideal: 'environment' } }, audio: false },
+      { video: { facingMode: { ideal: 'user' } }, audio: false },
+      { video: true, audio: false },
+    ]
+
+    let lastError: unknown = null
+    for (const constraints of attempts) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia(constraints)
+        return stream
+      } catch (err) {
+        lastError = err
+      }
+    }
+
+    throw lastError ?? new Error('Unable to access camera.')
+  }
+
   const drawChart = () => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -486,10 +506,8 @@ function App() {
       }
 
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' },
-          audio: false,
-        })
+        setVadStatus('VAD: requesting camera access...')
+        const stream = await requestCameraStream()
 
         if (cancelled) {
           stream.getTracks().forEach(track => track.stop())
@@ -504,6 +522,9 @@ function App() {
 
         videoEl.srcObject = stream
         await videoEl.play()
+        setVadStatus('VAD: camera connected, uploading frames...')
+
+        let uploadedFrameCount = 0
 
         uploadTimerRef.current = window.setInterval(async () => {
           if (uploadInFlightRef.current) return
@@ -537,6 +558,11 @@ function App() {
               method: 'POST',
               body: formData,
             })
+
+            uploadedFrameCount += 1
+            if (uploadedFrameCount === 1) {
+              setVadStatus('VAD: camera upload active, waiting for detections...')
+            }
           } catch {
             // Keep retrying while the pipeline remains active.
           } finally {
@@ -544,7 +570,7 @@ function App() {
           }
         }, 200)
       } catch (err: any) {
-        const message = err?.message || 'Camera access was denied.'
+        const message = err?.message || 'Camera access was denied or unavailable.'
         setVadStatus(`VAD: ${message}`)
         showToast({ source: 'UI', message, ts: Date.now() / 1000, severity: 'critical' })
       }
