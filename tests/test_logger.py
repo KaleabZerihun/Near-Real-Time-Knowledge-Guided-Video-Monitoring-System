@@ -1,7 +1,7 @@
 import pytest
 from backend.src.logger import InMemoryLogger
-from backend.src.vad.flashback_vad import VADOutput
 from backend.src.pipeline.kg_stub import KGOutput
+from backend.src.vad.types import VADOutput
 import time
 
 @pytest.mark.unit

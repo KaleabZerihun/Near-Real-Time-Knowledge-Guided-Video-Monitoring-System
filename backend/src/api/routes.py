@@ -3,8 +3,8 @@ import json
 import os
 import sqlite3
 import time
-import uuid
 import threading
+import uuid
 from pathlib import Path
 
 import cv2
@@ -17,13 +17,9 @@ from importlib.util import module_from_spec, spec_from_file_location
 from src.events.schemas import FramesIngest, VadIngest
 from src.events import service as events_service
 from src.db import repository
+from src.frame_selector.upload_source import get_uploaded_frame, set_uploaded_frame
 
 router = APIRouter()
-
-# Fallback frame store for browser-uploaded frames when pipeline runner is unavailable.
-_latest_uploaded_frame = None
-_latest_uploaded_frame_ts = 0.0
-_latest_uploaded_frame_lock = threading.Lock()
 
 def _default_db_url_like_main_py() -> str:
     backend_dir = Path(__file__).resolve().parents[2]
@@ -432,8 +428,7 @@ def video_mjpeg(request: Request):
             frame = runner.latest_frame() if runner else None
 
             if frame is None:
-                with _latest_uploaded_frame_lock:
-                    frame = None if _latest_uploaded_frame is None else _latest_uploaded_frame.copy()
+                frame, _ = get_uploaded_frame()
 
             if frame is None:
                 time.sleep(0.03)
@@ -561,11 +556,7 @@ async def process_frame(
             return JSONResponse({"error": "Invalid image data"}, status_code=400)
 
         current_time = time.time()
-
-        with _latest_uploaded_frame_lock:
-            global _latest_uploaded_frame, _latest_uploaded_frame_ts
-            _latest_uploaded_frame = img
-            _latest_uploaded_frame_ts = current_time
+        set_uploaded_frame(img, current_time)
 
         # Get the pipeline runner from app state
         # Note: This assumes the runner is stored in app.state.runner

@@ -3,7 +3,6 @@ from __future__ import annotations
 import threading
 import time
 from typing import Optional, Dict, Any, Tuple
-from dataclasses import dataclass
 
 import cv2
 import numpy as np
@@ -15,21 +14,12 @@ from src.frame_selector.runtime_selector import FrameSelector
 from src.frame_selector.config import FrameSelectorConfig
 from src.pipeline.kg_stub import DummyAugmentor
 from src.logger.logger import InMemoryLogger
+from src.vad.types import VADOutput
 
 try:
-    from src.vad.flashback_vad import FlashbackVAD, VADOutput
+    from src.vad.flashback_vad import FlashbackVAD
 except Exception as import_err:
     print(f"[WARN] Falling back to lightweight VAD: {import_err}")
-
-    @dataclass(frozen=True)
-    class VADOutput:
-        clip_id: int
-        ts_start: float
-        ts_end: float
-        label: str
-        confidence: float
-        top_caption: str
-        extra: Dict[str, Any]
 
     class FlashbackVAD:
         def __init__(self, rtvad_root: str, anomaly_threshold: float = 0.45, device: str = "cpu"):

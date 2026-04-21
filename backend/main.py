@@ -85,11 +85,12 @@ else:
     print(f"[WARN] images directory not found at {img_dir}")
 
 runner = None  # PipelineRunner | None (kept untyped for when PipelineRunner is None)
+video_source_status = os.getenv("VIDEO_SOURCE", "0")
 
 
 @app.on_event("startup")
 def startup() -> None:
-    global runner
+    global runner, video_source_status
 
     # Repo root is one level above backend/
     repo_root = THIS_DIR.parent
@@ -118,6 +119,7 @@ def startup() -> None:
 
     # Video source can be a webcam index or a remote source path / file path.
     video_source = os.getenv("VIDEO_SOURCE", "0")
+    video_source_status = video_source
     try:
         source = int(video_source)
     except ValueError:
@@ -154,7 +156,10 @@ def shutdown() -> None:
 @app.get("/status")
 def status():
     """Simple status endpoint so the dashboard can decide whether to call pipeline endpoints."""
-    return {"pipeline_enabled": runner is not None}
+    return {
+        "pipeline_enabled": runner is not None,
+        "video_source": video_source_status,
+    }
 
 
 @app.get("/favicon.ico")

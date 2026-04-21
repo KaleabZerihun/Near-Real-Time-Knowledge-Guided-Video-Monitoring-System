@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from ..vad.flashback_vad import VADOutput
 from ..pipeline.kg_stub import KGOutput
+from ..vad.types import VADOutput
 
 
 class Severity(str, Enum):

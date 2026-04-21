@@ -1,7 +1,6 @@
 from __future__ import annotations
 import os
 import json
-from dataclasses import dataclass
 from typing import Optional, Any, Dict, List, Tuple
 import cv2
 import numpy as np
@@ -10,16 +9,7 @@ import torch.nn.functional as F
 from imagebind.models import imagebind_model
 from imagebind.models.imagebind_model import ModalityType
 from ..frame_selector.types import ClipBatch
-
-@dataclass(frozen=True)
-class VADOutput:
-    clip_id: int
-    ts_start: float
-    ts_end: float
-    label: str               # "normal" or "anomaly"
-    confidence: float       
-    top_caption: str
-    extra: Dict[str, Any]
+from .types import VADOutput
 
 _MODEL_CACHE: Dict[str, torch.nn.Module] = {}
 _MEMORY_CACHE: Dict[Tuple[str, str, str, str, str], Tuple[torch.Tensor, torch.Tensor, List[str]]] = {}

@@ -40,6 +40,7 @@ const fmtVal = (v: number | null, unit: string): string =>
 
 function App() {
   const [pipelineEnabled, setPipelineEnabled] = useState<boolean | null>(null)
+  const [browserUploadMode, setBrowserUploadMode] = useState(false)
   const [vadStatus, setVadStatus] = useState('waiting...')
   const [, setOutput] = useState<string>('{ "status": "checking_pipeline_status" }')
   const [points, setPoints] = useState<VADPoint[]>([])
@@ -53,7 +54,12 @@ function App() {
   const [maxEventsHeight, setMaxEventsHeight] = useState('400px')
   
   const canvasRef = useRef<HTMLCanvasElement>(null)
+  const localVideoRef = useRef<HTMLVideoElement>(null)
+  const uploadCanvasRef = useRef<HTMLCanvasElement>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
+  const localStreamRef = useRef<MediaStream | null>(null)
+  const uploadTimerRef = useRef<number | null>(null)
+  const uploadInFlightRef = useRef(false)
   const toastCounterRef = useRef(0)
   const loggerEventCounterRef = useRef(0)
   const customEventRequestTokenRef = useRef(0)
@@ -236,6 +242,21 @@ function App() {
     }
   }, [])
 
+  const stopBrowserUpload = () => {
+    if (uploadTimerRef.current !== null) {
+      window.clearInterval(uploadTimerRef.current)
+      uploadTimerRef.current = null
+    }
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => track.stop())
+      localStreamRef.current = null
+    }
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = null
+    }
+    uploadInFlightRef.current = false
+  }
+
   const drawChart = () => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -361,6 +382,7 @@ function App() {
         const res = await fetch('/status')
         const data = await res.json()
         setPipelineEnabled(data.pipeline_enabled)
+        setBrowserUploadMode(String(data.video_source || '').toLowerCase() === 'browser_upload')
 
         if (!data.pipeline_enabled) {
           setVadStatus('VAD: pipeline disabled')
@@ -441,6 +463,95 @@ function App() {
     }
   }, [])
 
+  useEffect(() => {
+    if (!pipelineEnabled || !browserUploadMode) {
+      stopBrowserUpload()
+      return
+    }
+
+    let cancelled = false
+
+    const startBrowserUpload = async () => {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        const message = 'Browser camera upload is not supported in this browser.'
+        setVadStatus(`VAD: ${message}`)
+        showToast({ source: 'UI', message, ts: Date.now() / 1000, severity: 'critical' })
+        return
+      }
+
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' },
+          audio: false,
+        })
+
+        if (cancelled) {
+          stream.getTracks().forEach(track => track.stop())
+          return
+        }
+
+        localStreamRef.current = stream
+
+        const videoEl = localVideoRef.current
+        const canvasEl = uploadCanvasRef.current
+        if (!videoEl || !canvasEl) return
+
+        videoEl.srcObject = stream
+        await videoEl.play()
+
+        uploadTimerRef.current = window.setInterval(async () => {
+          if (uploadInFlightRef.current) return
+          if (!localVideoRef.current || localVideoRef.current.readyState < 2) return
+
+          const video = localVideoRef.current
+          const canvas = uploadCanvasRef.current
+          if (!canvas) return
+
+          const width = video.videoWidth || 640
+          const height = video.videoHeight || 360
+          canvas.width = width
+          canvas.height = height
+
+          const ctx = canvas.getContext('2d')
+          if (!ctx) return
+          ctx.drawImage(video, 0, 0, width, height)
+
+          uploadInFlightRef.current = true
+          try {
+            const blob = await new Promise<Blob | null>(resolve => {
+              canvas.toBlob(resolve, 'image/jpeg', 0.8)
+            })
+            if (!blob) return
+
+            const formData = new FormData()
+            formData.append('frame', blob, 'frame.jpg')
+            formData.append('timestamp', String(Date.now()))
+
+            await fetch('/api/process-frame', {
+              method: 'POST',
+              body: formData,
+            })
+          } catch {
+            // Keep retrying while the pipeline remains active.
+          } finally {
+            uploadInFlightRef.current = false
+          }
+        }, 200)
+      } catch (err: any) {
+        const message = err?.message || 'Camera access was denied.'
+        setVadStatus(`VAD: ${message}`)
+        showToast({ source: 'UI', message, ts: Date.now() / 1000, severity: 'critical' })
+      }
+    }
+
+    void startBrowserUpload()
+
+    return () => {
+      cancelled = true
+      stopBrowserUpload()
+    }
+  }, [pipelineEnabled, browserUploadMode])
+
   return (
     <div className="app-container">
       <div className="top-bar">
@@ -451,8 +562,7 @@ function App() {
       {pipelineEnabled === false && (
         <div className="warn">
           <b>Pipeline is disabled.</b>
-          This API is running, but ML dependencies are missing, so <code>/video/mjpeg</code> and{' '}
-          <code>/pipeline/stream</code> will not be called.
+          This API is running, but the live pipeline did not start, so video and SSE monitoring are unavailable.
         </div>
       )}
 
@@ -467,10 +577,20 @@ function App() {
           <h3>Live Video</h3>
           <div className="vad-badge">{vadStatus}</div>
           <div className='video-wrap' id="videoWrap">
-            {pipelineEnabled && (
+            {pipelineEnabled && browserUploadMode && (
+              <video
+                ref={localVideoRef}
+                autoPlay
+                muted
+                playsInline
+                style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '12px' }}
+              />
+            )}
+            {pipelineEnabled && !browserUploadMode && (
               <img id="videoImg" src="/video/mjpeg" alt="Live video stream" />
             )}
           </div>
+          <canvas ref={uploadCanvasRef} style={{ display: 'none' }} />
         </div>
         <Divider orientation="vertical" style={{ gridArea: 'divider-v1', margin: '0 5px', backgroundColor: '#6235d4', width: '1px' }} />
         <div>

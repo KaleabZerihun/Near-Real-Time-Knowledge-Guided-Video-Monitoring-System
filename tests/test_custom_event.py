@@ -295,6 +295,40 @@ class TestCustomAnomalyEndpoint:
         data = response.json()
         assert data["text"] == text
 
+    def test_get_custom_anomaly_status_ready_true(self, test_client, mock_runner, custom_memory_temp_dir, monkeypatch):
+        """Status endpoint should report ready when custom anomaly exists in memory."""
+        monkeypatch.setattr(mock_runner.vad, "rtvad_root", str(custom_memory_temp_dir))
+        custom_path = custom_memory_temp_dir / "custom_anomaly_memory.json"
+        _save_custom_memory(custom_path, [
+            {
+                "id": "existing-1",
+                "text": "person falling",
+                "embedding": [0.1, 0.2],
+                "created_at": 1234567890.0,
+            }
+        ])
+
+        response = test_client.get("/pipeline/custom-anomaly/status", params={"text": "person falling"})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ready"] is True
+
+    def test_get_custom_anomaly_status_ready_false(self, test_client, mock_runner, custom_memory_temp_dir, monkeypatch):
+        """Status endpoint should report not ready while event is still building."""
+        monkeypatch.setattr(mock_runner.vad, "rtvad_root", str(custom_memory_temp_dir))
+
+        response = test_client.get("/pipeline/custom-anomaly/status", params={"text": "not yet added"})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["ready"] is False
+
+    def test_get_custom_anomaly_status_requires_text(self, test_client):
+        """Status endpoint should reject empty text."""
+        response = test_client.get("/pipeline/custom-anomaly/status", params={"text": "   "})
+        assert response.status_code == 400
+        data = response.json()
+        assert "Text is required" in data.get("error", "")
+
 
 @pytest.mark.integration
 class TestCustomAnomalyIntegration:

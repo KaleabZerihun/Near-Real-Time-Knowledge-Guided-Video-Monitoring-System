@@ -11,6 +11,7 @@ from .buffer import FrameRingBuffer, DropOldestBatchQueue
 from .config import FrameSelectorConfig
 from .types import FramePacket, ClipBatch, FrameSelectorMetrics
 from .selector import IFrameSelector
+from .upload_source import get_uploaded_frame
 
 class FrameSelector(IFrameSelector):
     # Frame Selector runtime:
@@ -65,19 +66,27 @@ class FrameSelector(IFrameSelector):
         # Batch emission tracking
         self._last_emitted_start_frame_id: Optional[int] = None
 
+    def _uses_browser_upload(self) -> bool:
+        return isinstance(self.cfg.source, str) and self.cfg.source.strip().lower() in {
+            "browser_upload",
+            "browser",
+            "upload",
+        }
+
     # ------------------ public API ------------------
 
     def start(self) -> None:
-        if os.name == "nt" and isinstance(self.cfg.source, int):
-            self._cap = cv2.VideoCapture(self.cfg.source, cv2.CAP_DSHOW)
-            if not self._cap.isOpened():
-                self._cap.release()
+        if not self._uses_browser_upload():
+            if os.name == "nt" and isinstance(self.cfg.source, int):
+                self._cap = cv2.VideoCapture(self.cfg.source, cv2.CAP_DSHOW)
+                if not self._cap.isOpened():
+                    self._cap.release()
+                    self._cap = cv2.VideoCapture(self.cfg.source)
+            else:
                 self._cap = cv2.VideoCapture(self.cfg.source)
-        else:
-            self._cap = cv2.VideoCapture(self.cfg.source)
 
-        if not self._cap.isOpened():
-            raise RuntimeError(f"Could not open video source: {self.cfg.source}")
+            if not self._cap.isOpened():
+                raise RuntimeError(f"Could not open video source: {self.cfg.source}")
 
         self._stop.clear()
 
@@ -129,6 +138,10 @@ class FrameSelector(IFrameSelector):
     # ------------------ internal loops ------------------
 
     def _capture_loop(self) -> None:
+        if self._uses_browser_upload():
+            self._capture_uploaded_loop()
+            return
+
         assert self._cap is not None
 
         # buffering reduction to reduce latency
@@ -159,50 +172,67 @@ class FrameSelector(IFrameSelector):
 
             consecutive_read_failures = 0
 
-            ts = time.time()
+            self._handle_captured_frame(frame=frame, timestamp=time.time())
 
-            # resize (H, W) -> OpenCV wants (W, H)
-            H, W = self.cfg.resize_hw
-            frame_rs = cv2.resize(frame, (W, H))
+    def _capture_uploaded_loop(self) -> None:
+        last_seen_ts = 0.0
+        last_wait_log_ts = 0.0
 
-            now = time.time()
-
-            # Capture FPS (EVERY frame read)
-            self._cap_fps_frames += 1
-            if self._cap_fps_last_ts == 0.0:
-                self._cap_fps_last_ts = now
-            elif now - self._cap_fps_last_ts >= 1.0:
-                dt = now - self._cap_fps_last_ts
-                self._capture_fps_est = self._cap_fps_frames / dt
-                self._cap_fps_frames = 0
-                self._cap_fps_last_ts = now
-
-            # Frame Selection — only push selected frames to ring
-            if not self._sampler.should_select():
-                self._maybe_log_status()
+        while not self._stop.is_set():
+            frame, timestamp = get_uploaded_frame()
+            if frame is None or timestamp <= last_seen_ts:
+                now = time.time()
+                if last_wait_log_ts == 0.0 or (now - last_wait_log_ts) >= 5.0:
+                    print("[FrameSelector] waiting for browser-uploaded frames")
+                    last_wait_log_ts = now
+                time.sleep(0.02)
                 continue
 
-            # Selected FPS (ONLY selected frames)
-            self._sel_fps_frames += 1
-            if self._sel_fps_last_ts == 0.0:
-                self._sel_fps_last_ts = now
-            elif now - self._sel_fps_last_ts >= 1.0:
-                dt = now - self._sel_fps_last_ts
-                self._selected_fps_est = self._sel_fps_frames / dt
-                self._sel_fps_frames = 0
-                self._sel_fps_last_ts = now
+            last_seen_ts = timestamp
+            self._handle_captured_frame(frame=frame, timestamp=timestamp)
 
-            # Create packet + push to ring buffer (bounded, drop-oldest)
-            pkt = FramePacket(
-                frame_id=self._frame_id,
-                timestamp=ts,
-                frame_bgr=frame_rs,
-                source_id=self.cfg.source_id,
-            )
-            self._frame_id += 1
-            self._ring.push(pkt)
+    def _handle_captured_frame(self, frame, timestamp: float) -> None:
+        # resize (H, W) -> OpenCV wants (W, H)
+        H, W = self.cfg.resize_hw
+        frame_rs = cv2.resize(frame, (W, H))
 
+        now = time.time()
+
+        # Capture FPS (EVERY frame read)
+        self._cap_fps_frames += 1
+        if self._cap_fps_last_ts == 0.0:
+            self._cap_fps_last_ts = now
+        elif now - self._cap_fps_last_ts >= 1.0:
+            dt = now - self._cap_fps_last_ts
+            self._capture_fps_est = self._cap_fps_frames / dt
+            self._cap_fps_frames = 0
+            self._cap_fps_last_ts = now
+
+        # Frame Selection — only push selected frames to ring
+        if not self._sampler.should_select():
             self._maybe_log_status()
+            return
+
+        # Selected FPS (ONLY selected frames)
+        self._sel_fps_frames += 1
+        if self._sel_fps_last_ts == 0.0:
+            self._sel_fps_last_ts = now
+        elif now - self._sel_fps_last_ts >= 1.0:
+            dt = now - self._sel_fps_last_ts
+            self._selected_fps_est = self._sel_fps_frames / dt
+            self._sel_fps_frames = 0
+            self._sel_fps_last_ts = now
+
+        pkt = FramePacket(
+            frame_id=self._frame_id,
+            timestamp=timestamp,
+            frame_bgr=frame_rs,
+            source_id=self.cfg.source_id,
+        )
+        self._frame_id += 1
+        self._ring.push(pkt)
+
+        self._maybe_log_status()
 
     def _batch_loop(self) -> None:
         # Build clip batches from the most recent frames in the ring buffer.
