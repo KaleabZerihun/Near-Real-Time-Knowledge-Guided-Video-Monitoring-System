@@ -3,17 +3,60 @@ from __future__ import annotations
 import threading
 import time
 from typing import Optional, Dict, Any, Tuple
+from dataclasses import dataclass
 
 import cv2
+import numpy as np
 from src.db import repository
 from datetime import datetime, timezone
 from collections import deque
 
 from src.frame_selector.runtime_selector import FrameSelector
 from src.frame_selector.config import FrameSelectorConfig
-from src.vad.flashback_vad import FlashbackVAD, VADOutput
 from src.pipeline.kg_stub import DummyAugmentor
 from src.logger.logger import InMemoryLogger
+
+try:
+    from src.vad.flashback_vad import FlashbackVAD, VADOutput
+except Exception as import_err:
+    print(f"[WARN] Falling back to lightweight VAD: {import_err}")
+
+    @dataclass(frozen=True)
+    class VADOutput:
+        clip_id: int
+        ts_start: float
+        ts_end: float
+        label: str
+        confidence: float
+        top_caption: str
+        extra: Dict[str, Any]
+
+    class FlashbackVAD:
+        def __init__(self, rtvad_root: str, anomaly_threshold: float = 0.45, device: str = "cpu"):
+            self.rtvad_root = rtvad_root
+            self.anomaly_threshold = anomaly_threshold
+            self.device = device
+
+        def reload_memory(self) -> None:
+            return
+
+        def predict(self, batch):
+            mid = len(batch.frames) // 2
+            frame_bgr = batch.frames[mid].frame_bgr
+            gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+            # Simple motion/texture proxy when ML stack is unavailable.
+            score = float(np.std(gray) / 255.0)
+            score = max(0.0, min(1.0, score))
+            label = "anomaly" if score >= self.anomaly_threshold else "normal"
+            return VADOutput(
+                clip_id=batch.clip_id,
+                ts_start=batch.ts_start,
+                ts_end=batch.ts_end,
+                label=label,
+                confidence=score,
+                top_caption="fallback_vad",
+                extra={"mode": "fallback", "threshold": self.anomaly_threshold},
+            )
 
 
 class PipelineRunner:

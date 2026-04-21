@@ -6,13 +6,8 @@ pytest
 pytest-cov
 python-dotenv
 numpy
-opencv-python
+opencv-python-headless
 tqdm
 pyyaml
 pillow
 setuptools<82
---extra-index-url https://download.pytorch.org/whl/cpu
-torch
-torchvision
-torchaudio
-git+https://github.com/facebookresearch/ImageBind.git

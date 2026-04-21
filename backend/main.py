@@ -111,6 +111,11 @@ def startup() -> None:
         runner = None
         return
 
+    if PipelineRunner is None:
+        print("[WARN] RUN_PIPELINE=true but PipelineRunner dependencies are unavailable. Pipeline remains disabled.")
+        runner = None
+        return
+
     # Video source can be a webcam index or a remote source path / file path.
     video_source = os.getenv("VIDEO_SOURCE", "0")
     try:
