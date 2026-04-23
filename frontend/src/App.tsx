@@ -65,7 +65,9 @@ function App() {
   const eventSourceRef = useRef<EventSource | null>(null)
   const localStreamRef = useRef<MediaStream | null>(null)
   const uploadTimerRef = useRef<number | null>(null)
+  const uploadRafRef = useRef<number | null>(null)
   const uploadInFlightRef = useRef(false)
+  const uploadInFlightCountRef = useRef(0)
   const toastCounterRef = useRef(0)
   const loggerEventCounterRef = useRef(0)
   const customEventRequestTokenRef = useRef(0)
@@ -73,6 +75,10 @@ function App() {
   const AVG_WINDOW = 10
   const MAX_POINTS = 300
   const MAX_LOGGER_EVENTS = 5
+  const TARGET_UPLOAD_FPS = Math.max(1, Number(import.meta.env.VITE_UPLOAD_FPS || 30))
+  const UPLOAD_JPEG_QUALITY = Math.max(0.4, Math.min(0.95, Number(import.meta.env.VITE_UPLOAD_JPEG_QUALITY || 0.75)))
+  const UPLOAD_MAX_WIDTH = Math.max(224, Number(import.meta.env.VITE_UPLOAD_MAX_WIDTH || 640))
+  const MAX_UPLOAD_IN_FLIGHT = Math.max(1, Number(import.meta.env.VITE_UPLOAD_MAX_IN_FLIGHT || 2))
 
   const pushPoint = (t: number, confidence: number) => {
     if (!Number.isFinite(t) || !Number.isFinite(confidence)) return
@@ -253,6 +259,10 @@ function App() {
       window.clearInterval(uploadTimerRef.current)
       uploadTimerRef.current = null
     }
+    if (uploadRafRef.current !== null) {
+      window.cancelAnimationFrame(uploadRafRef.current)
+      uploadRafRef.current = null
+    }
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach(track => track.stop())
       localStreamRef.current = null
@@ -261,12 +271,29 @@ function App() {
       localVideoRef.current.srcObject = null
     }
     uploadInFlightRef.current = false
+    uploadInFlightCountRef.current = 0
   }
 
   const requestCameraStream = async (): Promise<MediaStream> => {
     const attempts: MediaStreamConstraints[] = [
-      { video: { facingMode: { ideal: 'environment' } }, audio: false },
-      { video: { facingMode: { ideal: 'user' } }, audio: false },
+      {
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          frameRate: { ideal: 30, max: 30 },
+        },
+        audio: false,
+      },
+      {
+        video: {
+          facingMode: { ideal: 'user' },
+          width: { ideal: 640 },
+          height: { ideal: 480 },
+          frameRate: { ideal: 30, max: 30 },
+        },
+        audio: false,
+      },
       { video: true, audio: false },
     ]
 
@@ -526,8 +553,11 @@ function App() {
 
         let uploadedFrameCount = 0
 
-        uploadTimerRef.current = window.setInterval(async () => {
-          if (uploadInFlightRef.current) return
+        const minUploadDeltaMs = 1000 / TARGET_UPLOAD_FPS
+        let lastUploadAt = 0
+
+        const uploadFrame = async () => {
+          if (uploadInFlightCountRef.current >= MAX_UPLOAD_IN_FLIGHT) return
           if (!localVideoRef.current || localVideoRef.current.readyState < 2) return
 
           const video = localVideoRef.current
@@ -536,17 +566,21 @@ function App() {
 
           const width = video.videoWidth || 640
           const height = video.videoHeight || 360
-          canvas.width = width
-          canvas.height = height
+          const scale = Math.min(1, UPLOAD_MAX_WIDTH / width)
+          const targetWidth = Math.max(1, Math.round(width * scale))
+          const targetHeight = Math.max(1, Math.round(height * scale))
+          canvas.width = targetWidth
+          canvas.height = targetHeight
 
           const ctx = canvas.getContext('2d')
           if (!ctx) return
-          ctx.drawImage(video, 0, 0, width, height)
+          ctx.drawImage(video, 0, 0, targetWidth, targetHeight)
 
           uploadInFlightRef.current = true
+          uploadInFlightCountRef.current += 1
           try {
             const blob = await new Promise<Blob | null>(resolve => {
-              canvas.toBlob(resolve, 'image/jpeg', 0.8)
+              canvas.toBlob(resolve, 'image/jpeg', UPLOAD_JPEG_QUALITY)
             })
             if (!blob) return
 
@@ -566,9 +600,21 @@ function App() {
           } catch {
             // Keep retrying while the pipeline remains active.
           } finally {
-            uploadInFlightRef.current = false
+            uploadInFlightCountRef.current = Math.max(0, uploadInFlightCountRef.current - 1)
+            uploadInFlightRef.current = uploadInFlightCountRef.current > 0
           }
-        }, 200)
+        }
+
+        const tick = (now: number) => {
+          if (cancelled) return
+          if (now - lastUploadAt >= minUploadDeltaMs && uploadInFlightCountRef.current < MAX_UPLOAD_IN_FLIGHT) {
+            lastUploadAt = now
+            void uploadFrame()
+          }
+          uploadRafRef.current = window.requestAnimationFrame(tick)
+        }
+
+        uploadRafRef.current = window.requestAnimationFrame(tick)
       } catch (err: any) {
         const message = err?.message || 'Camera access was denied or unavailable.'
         setVadStatus(`VAD: ${message}`)

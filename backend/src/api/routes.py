@@ -10,7 +10,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 from fastapi import APIRouter, HTTPException, Query, Request, UploadFile, File, Form
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
 from importlib.util import module_from_spec, spec_from_file_location
 
@@ -557,32 +557,7 @@ async def process_frame(
 
         current_time = time.time()
         set_uploaded_frame(img, current_time)
-
-        # Get the pipeline runner from app state
-        # Note: This assumes the runner is stored in app.state.runner
-        # You may need to adjust based on your actual app structure
-
-        # For now, acknowledge receipt and log processing
-        # TODO: Integrate with actual VAD pipeline for real-time analysis
-        print(f"[REAL-TIME] Processing frame at {current_time}: {frame.filename}")
-
-        # Placeholder for actual ML processing
-        # In production, this would:
-        # 1. Preprocess the frame (resize, normalize)
-        # 2. Run through VAD model
-        # 3. Generate confidence scores
-        # 4. Trigger alerts if anomalies detected
-        # 5. Store results in database
-
-        return JSONResponse({
-            "status": "processed",
-            "timestamp": timestamp,
-            "frame_filename": frame.filename,
-            "processed_at": current_time,
-            "frame_shape": img.shape,
-            "frame_source": "browser_upload",
-            "analysis_pending": True  # Flag for frontend that analysis is happening
-        })
+        return Response(status_code=204)
 
     except Exception as e:
         print(f"[FRAME-PROCESSING] Error: {e}")

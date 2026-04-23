@@ -16,6 +16,11 @@ class FrameSelectorConfig:
     # Preprocessing
     resize_hw: Tuple[int, int] = (224, 224)  # (H, W)
 
+    capture_hw: Tuple[int, int] = (640, 480)  # (W, H)
+    capture_fps: float = 30.0
+    capture_fourcc: str = "MJPG"
+    capture_backend: str = "auto"
+
     # Batching
     clip_len: int = 16
     stride: int = 8  # overlap control

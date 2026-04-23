@@ -36,6 +36,7 @@ class FrameSelector(IFrameSelector):
         # backpressure structures
         self._ring = FrameRingBuffer(maxlen=cfg.frame_ring_maxlen)
         self._batch_q = DropOldestBatchQueue(maxsize=cfg.max_batches)
+        self._new_frame_event = threading.Event()
 
         # ids
         self._frame_id = 0
@@ -75,18 +76,50 @@ class FrameSelector(IFrameSelector):
 
     # ------------------ public API ------------------
 
+    def _open_capture(self):
+        if os.name == "nt" and isinstance(self.cfg.source, int):
+            backend_pref = (self.cfg.capture_backend or "auto").strip().lower()
+            candidates: list[int | None]
+            if backend_pref == "msmf":
+                candidates = [cv2.CAP_MSMF, cv2.CAP_DSHOW, None]
+            elif backend_pref == "dshow":
+                candidates = [cv2.CAP_DSHOW, cv2.CAP_MSMF, None]
+            else:
+                candidates = [cv2.CAP_MSMF, cv2.CAP_DSHOW, None]
+
+            for backend in candidates:
+                cap = cv2.VideoCapture(self.cfg.source) if backend is None else cv2.VideoCapture(self.cfg.source, backend)
+                if cap.isOpened():
+                    return cap
+                cap.release()
+            return None
+
+        return cv2.VideoCapture(self.cfg.source)
+
     def start(self) -> None:
         if not self._uses_browser_upload():
-            if os.name == "nt" and isinstance(self.cfg.source, int):
-                self._cap = cv2.VideoCapture(self.cfg.source, cv2.CAP_DSHOW)
-                if not self._cap.isOpened():
-                    self._cap.release()
-                    self._cap = cv2.VideoCapture(self.cfg.source)
-            else:
-                self._cap = cv2.VideoCapture(self.cfg.source)
+            self._cap = self._open_capture()
 
-            if not self._cap.isOpened():
+            if self._cap is None or not self._cap.isOpened():
                 raise RuntimeError(f"Could not open video source: {self.cfg.source}")
+
+            try:
+                if self.cfg.capture_fourcc:
+                    fourcc = cv2.VideoWriter_fourcc(*self.cfg.capture_fourcc[:4])
+                    self._cap.set(cv2.CAP_PROP_FOURCC, fourcc)
+                self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, float(self.cfg.capture_hw[0]))
+                self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, float(self.cfg.capture_hw[1]))
+                self._cap.set(cv2.CAP_PROP_FPS, float(self.cfg.capture_fps))
+            except Exception:
+                pass
+
+            try:
+                w = self._cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+                h = self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+                fps = self._cap.get(cv2.CAP_PROP_FPS)
+                print(f"[FrameSelector] capture configured: backend={self.cfg.capture_backend} size={int(w)}x{int(h)} fps={fps:.1f}")
+            except Exception:
+                pass
 
         self._stop.clear()
 
@@ -98,6 +131,7 @@ class FrameSelector(IFrameSelector):
 
     def stop(self) -> None:
         self._stop.set()
+        self._new_frame_event.set()
 
         if self._capture_thread:
             self._capture_thread.join(timeout=1.0)
@@ -192,9 +226,12 @@ class FrameSelector(IFrameSelector):
             self._handle_captured_frame(frame=frame, timestamp=timestamp)
 
     def _handle_captured_frame(self, frame, timestamp: float) -> None:
-        # resize (H, W) -> OpenCV wants (W, H)
+        # resize only when shape does not already match configured size
         H, W = self.cfg.resize_hw
-        frame_rs = cv2.resize(frame, (W, H))
+        if frame.shape[0] == H and frame.shape[1] == W:
+            frame_rs = frame
+        else:
+            frame_rs = cv2.resize(frame, (W, H))
 
         now = time.time()
 
@@ -231,6 +268,7 @@ class FrameSelector(IFrameSelector):
         )
         self._frame_id += 1
         self._ring.push(pkt)
+        self._new_frame_event.set()
 
         self._maybe_log_status()
 
@@ -243,11 +281,15 @@ class FrameSelector(IFrameSelector):
         clip_len = self.cfg.clip_len
         stride = self.cfg.stride
 
+        def wait_for_new_frame() -> None:
+            self._new_frame_event.wait(timeout=0.02)
+            self._new_frame_event.clear()
+
         while not self._stop.is_set():
             ring_list = self._ring.snapshot()
 
             if len(ring_list) < clip_len:
-                time.sleep(0.005)
+                wait_for_new_frame()
                 continue
 
             window = ring_list[-clip_len:]
@@ -256,7 +298,7 @@ class FrameSelector(IFrameSelector):
             # enforce stride progression to avoid duplicate batches
             if self._last_emitted_start_frame_id is not None:
                 if start_id - self._last_emitted_start_frame_id < stride:
-                    time.sleep(0.005)
+                    wait_for_new_frame()
                     continue
 
             batch = ClipBatch(

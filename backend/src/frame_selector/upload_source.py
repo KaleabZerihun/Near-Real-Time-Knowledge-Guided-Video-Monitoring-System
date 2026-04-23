@@ -13,7 +13,7 @@ _lock = threading.Lock()
 def set_uploaded_frame(frame_bgr: np.ndarray, timestamp: float) -> None:
     global _latest_uploaded_frame, _latest_uploaded_frame_ts
     with _lock:
-        _latest_uploaded_frame = frame_bgr.copy()
+        _latest_uploaded_frame = frame_bgr
         _latest_uploaded_frame_ts = timestamp
 
 

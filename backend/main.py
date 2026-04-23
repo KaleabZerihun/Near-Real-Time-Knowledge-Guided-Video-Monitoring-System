@@ -125,13 +125,19 @@ def startup() -> None:
     except ValueError:
         source = video_source
 
+    is_browser_upload = isinstance(source, str) and source.strip().lower() == "browser_upload"
+
     cfg = FrameSelectorConfig(
         source=source,
         source_id=os.getenv("VIDEO_SOURCE_ID", "webcam0"),
-        select_every=_env_int("SELECT_EVERY", 2),
+        select_every=_env_int("SELECT_EVERY", 1),
         resize_hw=_parse_resize_hw(os.getenv("RESIZE_HW", "224,224")),
+        capture_hw=_parse_resize_hw(os.getenv("CAPTURE_HW", "640,480")),
+        capture_fps=_env_float("CAPTURE_FPS", 30.0),
+        capture_fourcc=os.getenv("CAPTURE_FOURCC", "MJPG"),
+        capture_backend=os.getenv("CAPTURE_BACKEND", "auto"),
         clip_len=_env_int("CLIP_LEN", 16),
-        stride=_env_int("STRIDE", 8),
+        stride=_env_int("STRIDE", 2 if is_browser_upload else 4),
         frame_ring_maxlen=_env_int("FRAME_RING_MAXLEN", 256),
         max_batches=_env_int("MAX_BATCHES", 8),
     )
