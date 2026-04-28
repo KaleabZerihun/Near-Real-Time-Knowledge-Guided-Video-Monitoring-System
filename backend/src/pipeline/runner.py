@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import threading
 import time
 from typing import Optional, Dict, Any, Tuple
@@ -16,44 +17,59 @@ from src.pipeline.kg_stub import DummyAugmentor
 from src.logger.logger import InMemoryLogger
 from src.vad.types import VADOutput
 
-try:
-    from src.vad.flashback_vad import FlashbackVAD
-except Exception as import_err:
-    print(f"[WARN] Falling back to lightweight VAD: {import_err}")
+class LightweightVAD:
+    def __init__(self, rtvad_root: str, anomaly_threshold: float = 0.45, device: str = "cpu"):
+        self.rtvad_root = rtvad_root
+        self.anomaly_threshold = anomaly_threshold
+        self.device = device
 
-    class FlashbackVAD:
-        def __init__(self, rtvad_root: str, anomaly_threshold: float = 0.45, device: str = "cpu"):
-            self.rtvad_root = rtvad_root
-            self.anomaly_threshold = anomaly_threshold
-            self.device = device
+    def reload_memory(self) -> None:
+        return
 
-        def reload_memory(self) -> None:
-            return
+    def predict(self, batch):
+        mid = len(batch.frames) // 2
+        frame_bgr = batch.frames[mid].frame_bgr
+        gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
+        # Simple motion/texture proxy for Free Tier runtime.
+        score = float(np.std(gray) / 255.0)
+        score = max(0.0, min(1.0, score))
+        label = "anomaly" if score >= self.anomaly_threshold else "normal"
+        return VADOutput(
+            clip_id=batch.clip_id,
+            ts_start=batch.ts_start,
+            ts_end=batch.ts_end,
+            label=label,
+            confidence=score,
+            top_caption="lightweight_vad",
+            extra={"mode": "lightweight", "threshold": self.anomaly_threshold},
+        )
 
-        def predict(self, batch):
-            mid = len(batch.frames) // 2
-            frame_bgr = batch.frames[mid].frame_bgr
-            gray = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2GRAY)
-            # Simple motion/texture proxy when ML stack is unavailable.
-            score = float(np.std(gray) / 255.0)
-            score = max(0.0, min(1.0, score))
-            label = "anomaly" if score >= self.anomaly_threshold else "normal"
-            return VADOutput(
-                clip_id=batch.clip_id,
-                ts_start=batch.ts_start,
-                ts_end=batch.ts_end,
-                label=label,
-                confidence=score,
-                top_caption="fallback_vad",
-                extra={"mode": "fallback", "threshold": self.anomaly_threshold},
-            )
+
+def _env_bool(name: str, default: bool) -> bool:
+    val = os.getenv(name)
+    if val is None:
+        return default
+    return val.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _build_vad(rtvad_root: str):
+    if _env_bool("LIGHTWEIGHT_VAD", False):
+        print("[INFO] LIGHTWEIGHT_VAD=true; using lightweight VAD.")
+        return LightweightVAD(rtvad_root=rtvad_root)
+
+    try:
+        from src.vad.flashback_vad import FlashbackVAD
+        return FlashbackVAD(rtvad_root=rtvad_root)
+    except Exception as import_err:
+        print(f"[WARN] Falling back to lightweight VAD: {import_err}")
+        return LightweightVAD(rtvad_root=rtvad_root)
 
 
 class PipelineRunner:
     def __init__(self, cfg: FrameSelectorConfig, rtvad_root: str, logger: InMemoryLogger | None = None):
         #create the frame selector, VAD and KG object
         self.selector = FrameSelector(cfg)
-        self.vad = FlashbackVAD(rtvad_root=rtvad_root)
+        self.vad = _build_vad(rtvad_root=rtvad_root)
         self.kg = DummyAugmentor()
         self.logger = logger or InMemoryLogger()
 
