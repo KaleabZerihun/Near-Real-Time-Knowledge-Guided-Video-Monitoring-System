@@ -1,11 +1,1 @@
-pydantic
-pytest
-pytest-cov
-python-dotenv
-numpy
-opencv-python
-fastapi
-python-multipart
-uvicorn
-torch
-torchvision
+-r backend/requirements.txt
