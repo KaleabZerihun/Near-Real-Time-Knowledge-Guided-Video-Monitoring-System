@@ -1,0 +1,39 @@
+{
+  "CallerReference": "nrt-video-https-proxy-20260427-2",
+  "Comment": "HTTPS proxy for nrt-video-backend-free-lite",
+  "Enabled": true,
+  "Origins": {
+    "Quantity": 1,
+    "Items": [
+      {
+        "Id": "nrt-eb-origin",
+        "DomainName": "nrt-video-backend-free-lite.us-east-2.elasticbeanstalk.com",
+        "CustomOriginConfig": {
+          "HTTPPort": 80,
+          "HTTPSPort": 443,
+          "OriginProtocolPolicy": "http-only",
+          "OriginSslProtocols": {
+            "Quantity": 1,
+            "Items": ["TLSv1.2"]
+          }
+        }
+      }
+    ]
+  },
+  "DefaultCacheBehavior": {
+    "TargetOriginId": "nrt-eb-origin",
+    "ViewerProtocolPolicy": "redirect-to-https",
+    "AllowedMethods": {
+      "Quantity": 7,
+      "Items": ["GET", "HEAD", "OPTIONS", "PUT", "PATCH", "POST", "DELETE"],
+      "CachedMethods": {
+        "Quantity": 3,
+        "Items": ["GET", "HEAD", "OPTIONS"]
+      }
+    },
+    "Compress": true,
+    "CachePolicyId": "4135ea2d-6df8-44a3-9df3-4b5a84be39ad",
+    "OriginRequestPolicyId": "216adef6-5c7f-47e4-b989-5492eafa07d3"
+  },
+  "PriceClass": "PriceClass_100"
+}

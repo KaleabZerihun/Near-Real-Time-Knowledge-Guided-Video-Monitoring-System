@@ -6,7 +6,7 @@ import { data } from './data/resource';
  */
 export const PythonBackend = defineHttpDataSource({
   name: 'PythonBackend',
-  endpoint: 'https://nrt-video-backend-recovery.us-east-2.elasticbeanstalk.com',
+  endpoint: 'https://d398t63webqfja.cloudfront.net',
   authorizationConfig: {
     signingRegion: 'us-east-2',
     signingServiceName: 'elasticbeanstalk',
