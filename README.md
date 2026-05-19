@@ -33,7 +33,7 @@ Many video monitoring systems require a person to manually watch footage for sus
 
 The system follows this general pipeline:
 
-```text
+
 Webcam Stream
     ↓
 Frame Selector / Buffer
@@ -44,7 +44,7 @@ Custom Anomaly Matching / Event Monitoring
     ↓
 Logger / Database
     ↓
-Web Dashboard
+Web Dashboard  
 
 
 ## To run this project:
